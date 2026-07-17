@@ -39,7 +39,7 @@ Phone Link (手机连接) mirrors your phone's SMS as Windows toast notification
 - Node.js 18+
 - Rust stable (MSVC toolchain)
 - WebView2 Runtime (preinstalled on Windows 11 and recent Windows 10; otherwise install the Evergreen Bootstrapper from Microsoft)
-- Phone side: iPhone requires iOS 26+, a Bluetooth connection to the PC, message previews enabled, and SMS sync turned on in Phone Link; Android requires SMS sync enabled in the Link to Windows app
+- Phone side: iPhone requires iOS 16+, a Bluetooth connection to the PC, message previews enabled, and SMS sync turned on in Phone Link; Android requires SMS sync enabled in the Link to Windows app
 
 ## Getting started
 
@@ -83,6 +83,7 @@ Adding extra source AUMIDs lets SnapCode capture codes pushed by apps other than
 
 ## Documentation
 
+- [User Guide (English)](docs/USER_GUIDE.md) — complete setup and usage: notification permission, phone-side prerequisites, custom AUMID sources, FAQ.
 - [中文使用指南 (User Guide, Simplified Chinese)](docs/USER_GUIDE.zh-CN.md) — complete setup and usage: notification permission, phone-side prerequisites, custom AUMID sources, FAQ.
 - [AGENTS.md](AGENTS.md) — developer/agent guide: project structure, conventions, and the frontend↔backend contract (14 commands plus the `code-added`, `listener-status`, and `shortcut-error` events; see `src/lib/tauri.ts`, `src/types.ts`, and `src-tauri/src/commands.rs`).
 

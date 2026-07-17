@@ -53,7 +53,7 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 ### 其他
 
 - `scripts/gen-icon.mjs`：零依赖图标生成脚本（仅 Node 内置模块，手写 PNG/ICO 编码），输出到 `src-tauri/icons/`。
-- `docs/USER_GUIDE.zh-CN.md`：中文用户手册。
+- `docs/USER_GUIDE.zh-CN.md`：中文用户手册；`docs/USER_GUIDE.md`：英文用户手册（结构一一对应，改动需双语同步）。
 - `README.md`：中英双语项目说明。
 - `src-tauri/tauri.conf.json`：`identifier: com.snapcode.app`，主窗口 420×680、无边框（自定义标题栏）、`csp: null`。
 
