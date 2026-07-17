@@ -107,7 +107,3 @@ node scripts/gen-icon.mjs    # 重新生成应用图标（输出 src-tauri/icons
 7. **目标应用以管理员权限运行时，UIPI 会拦截 `SendInput`**，粘贴静默失败属系统正常限制，不是 bug，不要试图「修复」。
 8. **exe 被占用会导致 `cargo build` 链接失败**（`LNK1104` 之类）：dev 构建产物是 `target/debug/snapcode.exe`（tauri dev 直接运行它），先从托盘退出应用或 `taskkill //IM snapcode.exe //F` 再构建；安装版 exe 名为 `SnapCode.exe`。
 9. 关闭主窗口是**隐藏到托盘**而非退出（`lib.rs` 的 `CloseRequested` 处理）；真正退出走托盘菜单「退出」。应用为单实例（second instance 只唤起主窗口）。
-
-## 禁止事项
-
-- **禁止执行任何 `git` 命令**（包括但不限于 commit / push / reset / rebase / checkout / clean）。仓库状态由用户自己管理。
