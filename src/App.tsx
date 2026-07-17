@@ -16,6 +16,7 @@ import {
   onListenerStatus,
   onShortcutError,
 } from "@/lib/tauri";
+import { detectLang, I18nProvider, toLang, translate } from "@/lib/i18n";
 import {
   applyTheme,
   getStoredTheme,
@@ -40,6 +41,11 @@ export default function App() {
     settingsRef.current = settings;
   }, [settings]);
 
+  /** 事件回调里取当前界面语言（设置未加载时跟随系统语言） */
+  function currentLang() {
+    return settingsRef.current ? toLang(settingsRef.current.language) : detectLang();
+  }
+
   // 主题应用；「跟随系统」时订阅系统主题变化
   useEffect(() => {
     applyTheme(theme);
@@ -55,7 +61,9 @@ export default function App() {
         setStatus(st);
         setRecords(h);
       })
-      .catch((e: unknown) => toast.error(`初始化失败：${String(e)}`))
+      .catch((e: unknown) =>
+        toast.error(translate(currentLang(), "app.initFailed", { err: String(e) })),
+      )
       .finally(() => setLoaded(true));
     getShortcutError()
       .then(setShortcutError)
@@ -66,13 +74,14 @@ export default function App() {
   useEffect(() => {
     const offCode = onCodeAdded((rec) => {
       setRecords((prev) => [rec, ...prev]);
-      if (settingsRef.current?.auto_copy) toast.success(`验证码 ${rec.code} 已复制`);
-      else toast.success(`收到新验证码 ${rec.code}`);
+      if (settingsRef.current?.auto_copy)
+        toast.success(translate(currentLang(), "app.codeCopied", { code: rec.code }));
+      else toast.success(translate(currentLang(), "app.codeReceived", { code: rec.code }));
     });
     const offStatus = onListenerStatus((st) => {
       setStatus(st);
       if (st.state === "access_denied") {
-        toast.error("通知访问权限被拒绝，请在设置中授权");
+        toast.error(translate(currentLang(), "app.accessDeniedToast"));
       }
     });
     const offShortcut = onShortcutError(setShortcutError);
@@ -97,49 +106,55 @@ export default function App() {
     }
   }
 
+  const lang = settings ? toLang(settings.language) : detectLang();
+
   if (!loaded || !settings) {
     return (
-      <div className="flex h-screen flex-col bg-background text-foreground">
-        <TitleBar />
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          加载中…
+      <I18nProvider lang={lang}>
+        <div className="flex h-screen flex-col bg-background text-foreground">
+          <TitleBar />
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            {translate(lang, "app.loading")}
+          </div>
         </div>
-      </div>
+      </I18nProvider>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
-      <TitleBar />
-      {settings.onboarded ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <TopBar status={status} tab={tab} onTabChange={setTab} />
-          <main className="min-h-0 flex-1">
-            {tab === "history" ? (
-              <HistoryPage records={records} onRecordsChange={setRecords} />
-            ) : (
-              <SettingsPage
-                settings={settings}
-                onSettingsChange={setSettings}
-                status={status}
-                shortcutError={shortcutError}
-                theme={theme}
-                onThemeChange={handleThemeChange}
-                onClearHistory={() => setRecords([])}
-              />
-            )}
-          </main>
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1">
-          <Onboarding
-            status={status}
-            shortcut={settings.shortcut}
-            onComplete={() => void handleCompleteOnboarding()}
-          />
-        </div>
-      )}
-      <Toaster position="bottom-center" theme={theme} richColors />
-    </div>
+    <I18nProvider lang={lang}>
+      <div className="flex h-screen flex-col bg-background text-foreground">
+        <TitleBar />
+        {settings.onboarded ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <TopBar status={status} tab={tab} onTabChange={setTab} />
+            <main className="min-h-0 flex-1">
+              {tab === "history" ? (
+                <HistoryPage records={records} onRecordsChange={setRecords} />
+              ) : (
+                <SettingsPage
+                  settings={settings}
+                  onSettingsChange={setSettings}
+                  status={status}
+                  shortcutError={shortcutError}
+                  theme={theme}
+                  onThemeChange={handleThemeChange}
+                  onClearHistory={() => setRecords([])}
+                />
+              )}
+            </main>
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1">
+            <Onboarding
+              status={status}
+              shortcut={settings.shortcut}
+              onComplete={() => void handleCompleteOnboarding()}
+            />
+          </div>
+        )}
+        <Toaster position="bottom-center" theme={theme} richColors />
+      </div>
+    </I18nProvider>
   );
 }

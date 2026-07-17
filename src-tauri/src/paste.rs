@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+use crate::i18n;
 use crate::state::AppState;
 use crate::toast::show_toast;
 
@@ -12,15 +13,16 @@ use crate::toast::show_toast;
 /// 注意：严禁在此激活/聚焦本程序窗口，否则粘贴目标会错误。
 #[cfg(windows)]
 pub fn paste_latest(app: &AppHandle, state: &Arc<AppState>) {
+    let lang = state.lang();
     let record = match state.db.latest() {
         Ok(Some(r)) => r,
         Ok(None) => {
-            show_toast("SnapCode 闪码", "暂无可用验证码");
+            show_toast(i18n::app_name(&lang), i18n::no_code_available(&lang));
             return;
         }
         Err(e) => {
             eprintln!("读取最新验证码失败: {e}");
-            show_toast("SnapCode 闪码", "读取验证码失败");
+            show_toast(i18n::app_name(&lang), i18n::read_code_failed(&lang));
             return;
         }
     };
@@ -32,7 +34,7 @@ pub fn paste_latest(app: &AppHandle, state: &Arc<AppState>) {
 
     if let Err(e) = app.clipboard().write_text(&record.code) {
         eprintln!("写入剪贴板失败: {e}");
-        show_toast("SnapCode 闪码", "复制到剪贴板失败");
+        show_toast(i18n::app_name(&lang), i18n::clipboard_write_failed(&lang));
         return;
     }
     let _ = state.db.mark_used(record.id);
@@ -42,7 +44,7 @@ pub fn paste_latest(app: &AppHandle, state: &Arc<AppState>) {
     unsafe {
         send_ctrl_v();
     }
-    show_toast("SnapCode 闪码", "验证码已复制并粘贴");
+    show_toast(i18n::app_name(&lang), i18n::pasted(&lang));
 }
 
 /// 轮询等待用户物理松开所有修饰键（Ctrl/Shift/Alt/Win）。
@@ -119,12 +121,13 @@ unsafe fn send_ctrl_v() {
 #[cfg(not(windows))]
 pub fn paste_latest(app: &AppHandle, state: &Arc<AppState>) {
     // 非 Windows 平台桩：仅复制到剪贴板
+    let lang = state.lang();
     match state.db.latest() {
         Ok(Some(record)) => {
             let _ = app.clipboard().write_text(&record.code);
             let _ = state.db.mark_used(record.id);
-            show_toast("SnapCode 闪码", "验证码已复制");
+            show_toast(i18n::app_name(&lang), i18n::copied(&lang));
         }
-        _ => show_toast("SnapCode 闪码", "暂无可用验证码"),
+        _ => show_toast(i18n::app_name(&lang), i18n::no_code_available(&lang)),
     }
 }

@@ -28,7 +28,7 @@ pub fn spawn_monitor(app: AppHandle, state: Arc<AppState>) {
     state.set_status(
         &app,
         "unsupported",
-        Some("当前平台不支持通知监听".to_string()),
+        Some(crate::i18n::unsupported_platform_listen(&state.lang()).to_string()),
     );
 }
 
@@ -42,14 +42,14 @@ pub struct ToastInfo {
 
 /// 列出当前系统中的 Toast 通知（诊断来源过滤用）。
 #[cfg(windows)]
-pub fn dump_current_toasts() -> Result<Vec<ToastInfo>, String> {
-    imp::dump_current_toasts()
+pub fn dump_current_toasts(lang: &str) -> Result<Vec<ToastInfo>, String> {
+    imp::dump_current_toasts(lang)
 }
 
 /// 列出当前系统中的 Toast 通知（诊断来源过滤用）。
 #[cfg(not(windows))]
-pub fn dump_current_toasts() -> Result<Vec<ToastInfo>, String> {
-    Err("当前平台不支持通知读取".to_string())
+pub fn dump_current_toasts(lang: &str) -> Result<Vec<ToastInfo>, String> {
+    Err(crate::i18n::unsupported_platform_dump(lang).to_string())
 }
 
 #[cfg(windows)]
@@ -88,7 +88,7 @@ mod imp {
             state.set_status(
                 app,
                 "unsupported",
-                Some("需要 Windows 10 1809 或更高版本".to_string()),
+                Some(crate::i18n::unsupported_build(&state.lang()).to_string()),
             );
             return;
         }
@@ -98,7 +98,11 @@ mod imp {
         let listener = match UserNotificationListener::Current() {
             Ok(l) => l,
             Err(e) => {
-                state.set_status(app, "error", Some(format!("无法初始化通知监听器: {e}")));
+                state.set_status(
+                    app,
+                    "error",
+                    Some(crate::i18n::listener_init_failed(&state.lang(), &e.to_string())),
+                );
                 return;
             }
         };
@@ -109,13 +113,20 @@ mod imp {
                     state.set_status(
                         app,
                         "access_denied",
-                        Some("未授予通知访问权限，请在系统设置中开启".to_string()),
+                        Some(crate::i18n::access_denied_hint(&state.lang()).to_string()),
                     );
                     return;
                 }
             }
             Err(e) => {
-                state.set_status(app, "error", Some(format!("请求通知访问权限失败: {e}")));
+                state.set_status(
+                    app,
+                    "error",
+                    Some(crate::i18n::access_request_failed(
+                        &state.lang(),
+                        &e.to_string(),
+                    )),
+                );
                 return;
             }
         }
@@ -310,7 +321,7 @@ mod imp {
     }
 
     /// 列出当前所有 Toast 通知的来源 AUMID 与文本（诊断用）。
-    pub fn dump_current_toasts() -> Result<Vec<super::ToastInfo>, String> {
+    pub fn dump_current_toasts(lang: &str) -> Result<Vec<super::ToastInfo>, String> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         }
@@ -320,7 +331,7 @@ mod imp {
             .and_then(|op| op.get())
             .map_err(|e| e.to_string())?;
         if access != UserNotificationListenerAccessStatus::Allowed {
-            return Err("未授予通知访问权限".to_string());
+            return Err(crate::i18n::access_not_granted(lang).to_string());
         }
         let list = listener
             .GetNotificationsAsync(NotificationKinds::Toast)

@@ -29,6 +29,7 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 | `hotkey.rs` | 快捷键字符串解析（`"Ctrl+Shift+V"` → `Shortcut`）与全局注册；失败写入 `shortcut_error` 并广播 `shortcut-error`；含解析单测 |
 | `paste.rs` | 快捷粘贴：取最新验证码 → 轮询 `GetAsyncKeyState` 等修饰键物理松开 → 写剪贴板 → `mark_used` → `SendInput` 模拟 Ctrl+V → Toast 提示 |
 | `toast.rs` | Windows Toast 通知：`APP_AUMID = "com.snapcode.app"`；`ensure_app_shortcut()` 创建带 `AppUserModel.ID` 的开始菜单快捷方式；`show_toast()` 发送 ToastGeneric 通知 |
+| `i18n.rs` | Rust 侧用户可见文案的中英对照（托盘菜单、Toast、状态与错误消息）：`pick()` 按 `Settings.language` 二选一，非 `"en"` 一律按中文 |
 | `commands.rs` | 全部 14 个 `#[tauri::command]`：前后端契约的 Rust 侧实现，另有 `apply_autostart()` / `set_paused_impl()` 两个共享辅助函数 |
 
 ### 前端（`src/`）
@@ -37,7 +38,7 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 - `App.tsx`：根组件。三种视图状态：加载中 → 首次引导（`Onboarding`）→ 主界面（`TopBar` + 历史/设置两个 Tab 页）；统一订阅 `code-added` / `listener-status` / `shortcut-error` 三个事件。
 - `components/HistoryPage.tsx`：历史记录页（搜索、复制、删除）。
 - `components/SettingsPage.tsx`：设置页（自动复制、快捷键、开机自启、保留策略、来源 AUMID 管理、主题、清空历史、调试区）。
-- `components/Onboarding.tsx`：首次引导（通知权限授予流程）。
+- `components/Onboarding.tsx`：首次使用清单（三步功能介绍 + Phone Link 短信同步前置说明）；`unsupported` / `access_denied` 为响应式错误分支，权限异常另有状态系统兜底。
 - `components/TopBar.tsx`：状态点 + Tab 切换 + 暂停/恢复。
 - `components/TitleBar.tsx`：自定义标题栏（窗口 `decorations: false`，拖拽区 + 最小化/关闭按钮）。
 - `components/ShortcutRecorder.tsx`：快捷键录制控件。
@@ -45,7 +46,8 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 - `lib/tauri.ts`：**前后端契约的前端封装**——typed invoke + 事件订阅；无 Tauri 运行时（纯浏览器 `vite dev`）自动切换为内存 Mock，便于前端预览。
 - `lib/utils.ts`：`cn()`、`DEFAULT_AUMID`（与 `settings.rs` 默认值一致）、`sourceDisplayName()`、`statusMeta()`。
 - `lib/theme.ts`：亮/暗/跟随系统主题（localStorage 持久化）。
-- `lib/time.ts`：时间格式化工具。
+- `lib/i18n/`：中英 i18n。`zh-CN.ts` 是词典键的单一事实来源（`Messages` 类型），`en.ts` 必须同构（类型强制）；`index.tsx` 提供 `I18nProvider` / `useI18n()` 与纯函数 `translate()`（`time.ts` / `utils.ts` 经它取文案）。语言存于后端 `Settings.language`，不走 localStorage。
+- `lib/time.ts`：时间格式化工具（函数带 `lang` 参数）。
 - `types.ts`：与 Rust serde 对应的契约类型（`CodeRecord` / `Settings` / `ListenerState` / `ToastInfo`）。
 
 ### 其他
@@ -83,7 +85,8 @@ node scripts/gen-icon.mjs    # 重新生成应用图标（输出 src-tauri/icons
 
 1. Rust 侧结构体与 `#[tauri::command]` 实现、`lib.rs` 的 `invoke_handler` 列表；
 2. `src/types.ts` 类型与 `src/lib/tauri.ts` 封装（含浏览器 Mock 分支）；
-3. **Settings 默认值要三方对齐**：`src-tauri/src/settings.rs` 的 `Default` impl、`src/lib/utils.ts` 的 `DEFAULT_AUMID`、`src/lib/tauri.ts` 的 `mockSettings`。
+3. **Settings 默认值要三方对齐**：`src-tauri/src/settings.rs` 的 `Default` impl、`src/lib/utils.ts` 的 `DEFAULT_AUMID`、`src/lib/tauri.ts` 的 `mockSettings`。例外：`language` 默认值在 Rust 侧由 `default_language()` 按系统 UI 语言检测（中文 → `zh-CN`，其余 → `en`），Mock 固定 `"zh-CN"`。
+4. **i18n 文案两侧对齐**：前端新增/修改文案先加键到 `src/lib/i18n/zh-CN.ts`，再在 `en.ts` 补同构翻译（`Messages` 类型会强制检查）；Rust 侧用户可见文案（托盘 / Toast / 状态与错误消息）集中在 `src-tauri/src/i18n.rs`，语言经 `AppState::lang()` 读取。
 
 注意：TS 侧 `number` = Rust `i64`；`received_at` 为 Unix 毫秒时间戳；`Settings` 带 `#[serde(default)]`，缺字段时回退默认值。
 
@@ -93,7 +96,7 @@ node scripts/gen-icon.mjs    # 重新生成应用图标（输出 src-tauri/icons
 - `parser.rs` 保持**纯函数**（不碰 IO / 全局状态），任何解析规则改动都要补单元测试。
 - 不新增依赖（npm / cargo）除非确有必要；`gen-icon.mjs` 保持零依赖的传统。
 - 改动完成后 **`npm run build` 与 `cargo test --manifest-path src-tauri/Cargo.toml` 双绿才算完成**。
-- UI 文案使用简体中文；代码注释随现有风格（中文注释、说明「为什么」而非「是什么」）。
+- UI 文案全部走 i18n（中 / 英），不硬编码：组件经 `useI18n()` 的 `t()` 取用，纯函数模块用 `translate(lang, key)`；代码注释随现有风格（中文注释、说明「为什么」而非「是什么」）。
 - 最小改动：不顺手重构、不改无关格式。
 
 ## 已知决策与坑（不要反复踩）

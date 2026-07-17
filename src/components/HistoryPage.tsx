@@ -4,6 +4,7 @@ import { Copy, Inbox, Search, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n";
 import { copyCode, deleteRecord, getHistory } from "@/lib/tauri";
 import { groupByDay, relativeTime } from "@/lib/time";
 import { cn, sourceDisplayName } from "@/lib/utils";
@@ -15,6 +16,7 @@ interface HistoryPageProps {
 }
 
 export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
+  const { t, lang } = useI18n();
   const [query, setQuery] = useState("");
   /** 搜索结果；null 表示未在搜索，直接展示完整列表 */
   const [results, setResults] = useState<CodeRecord[] | null>(null);
@@ -35,7 +37,7 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
   }, [query]);
 
   const shown = results ?? records;
-  const groups = groupByDay(shown, (r) => r.received_at);
+  const groups = groupByDay(shown, (r) => r.received_at, lang);
 
   function patchEverywhere(id: number, patch: Partial<CodeRecord>) {
     const apply = (list: CodeRecord[]) =>
@@ -53,7 +55,7 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
     try {
       await copyCode(id);
       patchEverywhere(id, { used: true });
-      toast.success("已复制");
+      toast.success(t("history.copied"));
     } catch (e) {
       toast.error(String(e));
     }
@@ -63,7 +65,7 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
     try {
       await deleteRecord(id);
       removeEverywhere(id);
-      toast.success("已删除");
+      toast.success(t("history.deleted"));
     } catch (e) {
       toast.error(String(e));
     }
@@ -77,7 +79,7 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索验证码、号码或内容…"
+            placeholder={t("history.searchPlaceholder")}
             className="h-8 pl-8"
           />
         </div>
@@ -87,18 +89,17 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
         {shown.length === 0 ? (
           query.trim() ? (
             <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
-              <p className="text-sm font-medium">没有匹配的记录</p>
-              <p className="text-xs text-muted-foreground">换个关键字试试</p>
+              <p className="text-sm font-medium">{t("history.noMatch")}</p>
+              <p className="text-xs text-muted-foreground">{t("history.noMatchHint")}</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 px-8 py-16 text-center">
               <div className="rounded-full bg-muted p-4">
                 <Inbox className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="text-sm font-medium">暂无验证码</p>
+              <p className="text-sm font-medium">{t("history.emptyTitle")}</p>
               <p className="max-w-[300px] text-xs leading-relaxed text-muted-foreground">
-                请确认「手机连接」已连接手机并开启短信通知同步；iPhone
-                需保持蓝牙连接，并在 iOS 通知设置中允许短信显示内容。
+                {t("history.emptyDesc")}
               </p>
             </div>
           )
@@ -124,14 +125,14 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
                         {r.code}
                       </p>
                       <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="truncate">{r.sender ?? "未知号码"}</span>
+                        <span className="truncate">{r.sender ?? t("history.unknownSender")}</span>
                         <span className="shrink-0">·</span>
-                        <span className="shrink-0">{relativeTime(r.received_at)}</span>
+                        <span className="shrink-0">{relativeTime(r.received_at, lang)}</span>
                         <span className="shrink-0">·</span>
-                        <span className="shrink-0">{sourceDisplayName(r.source)}</span>
+                        <span className="shrink-0">{sourceDisplayName(r.source, lang)}</span>
                         {r.used && (
                           <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] leading-none">
-                            已使用
+                            {t("history.used")}
                           </span>
                         )}
                       </div>
@@ -141,7 +142,7 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        title="复制"
+                        title={t("common.copy")}
                         onClick={() => void handleCopy(r.id)}
                       >
                         <Copy className="h-4 w-4" />
@@ -150,7 +151,7 @@ export function HistoryPage({ records, onRecordsChange }: HistoryPageProps) {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        title="删除"
+                        title={t("common.delete")}
                         onClick={() => void handleDelete(r.id)}
                       >
                         <Trash2 className="h-4 w-4" />

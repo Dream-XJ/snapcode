@@ -48,4 +48,9 @@ impl AppState {
         };
         let _ = app.emit("listener-status", payload);
     }
+
+    /// 当前界面语言（"zh-CN" | "en"），用于挑选用户可见文案。
+    pub fn lang(&self) -> String {
+        self.settings.read().unwrap().language.clone()
+    }
 }

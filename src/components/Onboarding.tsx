@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { openNotificationSettings, retryListener } from "@/lib/tauri";
 import type { ListenerState } from "@/types";
 
@@ -29,6 +30,7 @@ function Center({ children }: { children: ReactNode }) {
 }
 
 export function Onboarding({ status, shortcut, onComplete }: OnboardingProps) {
+  const { t } = useI18n();
   const state = status?.state;
 
   if (state === "unsupported") {
@@ -37,10 +39,10 @@ export function Onboarding({ status, shortcut, onComplete }: OnboardingProps) {
         <div className="rounded-full bg-muted p-4">
           <AlertTriangle className="h-7 w-7 text-amber-500" />
         </div>
-        <h1 className="text-lg font-semibold">系统版本不受支持</h1>
-        <p className="text-sm text-muted-foreground">需要 Windows 10 1809 或更高版本</p>
+        <h1 className="text-lg font-semibold">{t("onboarding.unsupportedTitle")}</h1>
+        <p className="text-sm text-muted-foreground">{t("onboarding.unsupportedDesc")}</p>
         <Button variant="ghost" onClick={onComplete}>
-          仍要进入应用
+          {t("onboarding.enterAnyway")}
         </Button>
       </Center>
     );
@@ -52,17 +54,19 @@ export function Onboarding({ status, shortcut, onComplete }: OnboardingProps) {
         <div className="rounded-full bg-muted p-4">
           <ShieldAlert className="h-7 w-7 text-red-500" />
         </div>
-        <h1 className="text-lg font-semibold">通知访问权限被拒绝</h1>
+        <h1 className="text-lg font-semibold">{t("onboarding.deniedTitle")}</h1>
         <p className="max-w-[300px] text-sm leading-relaxed text-muted-foreground">
-          SnapCode 需要读取系统通知才能识别短信验证码，请在系统设置中授权后重新检测。
+          {t("onboarding.deniedDesc")}
         </p>
         <div className="flex w-56 flex-col gap-2">
-          <Button onClick={() => void openNotificationSettings()}>打开系统设置</Button>
+          <Button onClick={() => void openNotificationSettings()}>
+            {t("common.openSystemSettings")}
+          </Button>
           <Button variant="outline" onClick={() => void retryListener()}>
-            重新检测
+            {t("common.retry")}
           </Button>
           <Button variant="ghost" onClick={onComplete}>
-            暂不授权，继续使用
+            {t("onboarding.continueAnyway")}
           </Button>
         </div>
       </Center>
@@ -72,22 +76,22 @@ export function Onboarding({ status, shortcut, onComplete }: OnboardingProps) {
   const steps: { icon: LucideIcon; title: string; desc: ReactNode }[] = [
     {
       icon: Bell,
-      title: "监听通知",
-      desc: "读取「手机连接」同步到 Windows 的短信通知",
+      title: t("onboarding.stepListenTitle"),
+      desc: t("onboarding.stepListenDesc"),
     },
     {
       icon: ScanLine,
-      title: "识别验证码",
-      desc: "自动提取短信中的数字验证码，存入本地历史",
+      title: t("onboarding.stepDetectTitle"),
+      desc: t("onboarding.stepDetectDesc"),
     },
     {
       icon: Keyboard,
-      title: "快捷粘贴",
+      title: t("onboarding.stepPasteTitle"),
       desc: (
         <>
-          按下{" "}
+          {t("onboarding.stepPasteDesc1")}{" "}
           <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">{shortcut}</kbd>{" "}
-          即可粘贴最新验证码
+          {t("onboarding.stepPasteDesc2")}
         </>
       ),
     },
@@ -96,10 +100,8 @@ export function Onboarding({ status, shortcut, onComplete }: OnboardingProps) {
   return (
     <Center>
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">欢迎使用 SnapCode 闪码</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          自动捕获 Windows 通知里的短信验证码
-        </p>
+        <h1 className="text-xl font-semibold tracking-tight">{t("onboarding.welcomeTitle")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("onboarding.welcomeDesc")}</p>
       </div>
 
       <ol className="w-full max-w-[320px] space-y-2.5 text-left">
@@ -123,14 +125,13 @@ export function Onboarding({ status, shortcut, onComplete }: OnboardingProps) {
 
       <div className="flex w-56 flex-col gap-2">
         <Button variant="outline" onClick={() => void openNotificationSettings()}>
-          打开通知设置
+          {t("onboarding.openSettings")}
         </Button>
-        <Button onClick={onComplete}>我已完成授权，开始使用</Button>
+        <Button onClick={onComplete}>{t("onboarding.done")}</Button>
       </div>
 
       <p className="max-w-[320px] text-xs leading-relaxed text-muted-foreground">
-        使用前请在「手机连接」中开启短信同步：iPhone 需保持蓝牙连接，并在 iOS
-        通知设置中允许短信显示内容；Android 请在「连接至 Windows」中开启短信同步。
+        {t("onboarding.footer")}
       </p>
     </Center>
   );

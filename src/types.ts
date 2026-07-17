@@ -19,6 +19,8 @@ export interface Settings {
   retention_days: number;
   aumids: string[];
   onboarded: boolean;
+  /** 界面语言："zh-CN" | "en"（Rust 侧为 String，非 "en" 一律按中文） */
+  language: string;
 }
 
 export type ListenerStateName =

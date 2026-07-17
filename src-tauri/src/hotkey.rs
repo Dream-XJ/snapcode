@@ -3,10 +3,11 @@
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
+use crate::i18n;
 use crate::state::AppState;
 
 /// 解析 "Ctrl+Shift+V" 形式的快捷键字符串。
-pub fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
+pub fn parse_shortcut(lang: &str, s: &str) -> Result<Shortcut, String> {
     let mut modifiers = Modifiers::empty();
     let mut code: Option<Code> = None;
 
@@ -18,21 +19,21 @@ pub fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
             "meta" | "win" | "command" | "super" => modifiers |= Modifiers::META,
             _ => {
                 if code.is_some() {
-                    return Err(format!("快捷键「{s}」无效：包含多个按键"));
+                    return Err(i18n::shortcut_multi_keys(lang, s));
                 }
-                code = Some(parse_key_code(part)?);
+                code = Some(parse_key_code(lang, part)?);
             }
         }
     }
 
-    let code = code.ok_or_else(|| format!("快捷键「{s}」无效：缺少按键"))?;
+    let code = code.ok_or_else(|| i18n::shortcut_no_key(lang, s))?;
     if modifiers.is_empty() {
-        return Err(format!("快捷键「{s}」无效：至少需要一个修饰键"));
+        return Err(i18n::shortcut_no_modifier(lang, s));
     }
     Ok(Shortcut::new(Some(modifiers), code))
 }
 
-fn parse_key_code(key: &str) -> Result<Code, String> {
+fn parse_key_code(lang: &str, key: &str) -> Result<Code, String> {
     let upper = key.to_uppercase();
     let code = match upper.as_str() {
         "A" => Code::KeyA,
@@ -110,14 +111,15 @@ fn parse_key_code(key: &str) -> Result<Code, String> {
         "DOWN" | "ARROWDOWN" => Code::ArrowDown,
         "LEFT" | "ARROWLEFT" => Code::ArrowLeft,
         "RIGHT" | "ARROWRIGHT" => Code::ArrowRight,
-        _ => return Err(format!("无法识别的按键「{key}」")),
+        _ => return Err(i18n::shortcut_unknown_key(lang, key)),
     };
     Ok(code)
 }
 
 /// 注销旧快捷键并注册新的；失败时写入 shortcut_error 并广播 "shortcut-error"。
 pub fn register_shortcut(app: &AppHandle, state: &AppState, shortcut_str: &str) -> Result<(), String> {
-    let shortcut = parse_shortcut(shortcut_str)?;
+    let lang = state.lang();
+    let shortcut = parse_shortcut(&lang, shortcut_str)?;
     app.global_shortcut()
         .unregister_all()
         .map_err(|e| e.to_string())?;
@@ -127,7 +129,7 @@ pub fn register_shortcut(app: &AppHandle, state: &AppState, shortcut_str: &str) 
             Ok(())
         }
         Err(e) => {
-            let msg = format!("快捷键「{shortcut_str}」注册失败，可能已被其他程序占用: {e}");
+            let msg = i18n::shortcut_register_failed(&lang, shortcut_str, &e.to_string());
             set_shortcut_error(app, state, Some(msg.clone()));
             Err(msg)
         }
@@ -151,17 +153,18 @@ mod tests {
 
     #[test]
     fn parses_valid_shortcuts() {
-        assert!(parse_shortcut("Ctrl+Shift+V").is_ok());
-        assert!(parse_shortcut("Alt+C").is_ok());
-        assert!(parse_shortcut("ctrl+shift+f5").is_ok());
-        assert!(parse_shortcut("Ctrl+Space").is_ok());
+        assert!(parse_shortcut("zh-CN", "Ctrl+Shift+V").is_ok());
+        assert!(parse_shortcut("zh-CN", "Alt+C").is_ok());
+        assert!(parse_shortcut("zh-CN", "ctrl+shift+f5").is_ok());
+        assert!(parse_shortcut("en", "Ctrl+Space").is_ok());
     }
 
     #[test]
     fn rejects_invalid_shortcuts() {
-        assert!(parse_shortcut("").is_err());
-        assert!(parse_shortcut("V").is_err()); // 缺少修饰键
-        assert!(parse_shortcut("Ctrl+Shift").is_err()); // 缺少按键
-        assert!(parse_shortcut("Ctrl+NotAKey").is_err());
+        assert!(parse_shortcut("zh-CN", "").is_err());
+        assert!(parse_shortcut("zh-CN", "V").is_err()); // 缺少修饰键
+        assert!(parse_shortcut("zh-CN", "Ctrl+Shift").is_err()); // 缺少按键
+        assert!(parse_shortcut("zh-CN", "Ctrl+NotAKey").is_err());
+        assert!(parse_shortcut("en", "Ctrl+NotAKey").is_err());
     }
 }

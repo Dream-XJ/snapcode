@@ -135,6 +135,7 @@ let mockSettings: Settings = {
   retention_days: 7,
   aumids: ["Microsoft.YourPhone_8wekyb3d8bbwe"],
   onboarded: true,
+  language: "zh-CN",
 };
 
 let mockStatus: ListenerState = { state: "running", message: null };

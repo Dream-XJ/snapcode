@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface ShortcutRecorderProps {
@@ -34,6 +35,7 @@ function formatCombo(e: KeyboardEvent): string | null {
 }
 
 export function ShortcutRecorder({ value, error, onSave }: ShortcutRecorderProps) {
+  const { t } = useI18n();
   const [recording, setRecording] = useState(false);
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -65,7 +67,9 @@ export function ShortcutRecorder({ value, error, onSave }: ShortcutRecorderProps
       <Input
         readOnly
         value={recording ? draft : value}
-        placeholder={saving ? "保存中…" : recording ? "按下组合键…" : "点击录入"}
+        placeholder={
+          saving ? t("recorder.saving") : recording ? t("recorder.press") : t("recorder.click")
+        }
         onFocus={() => {
           setRecording(true);
           setDraft("");

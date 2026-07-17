@@ -1,5 +1,6 @@
 mod commands;
 mod hotkey;
+mod i18n;
 mod notifications;
 mod parser;
 mod paste;
@@ -28,23 +29,36 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-fn build_tray(app: &App) -> tauri::Result<()> {
-    let open_item = MenuItem::with_id(app, "open", "打开主窗口", true, None::<&str>)?;
-    let pause_item = MenuItem::with_id(app, "pause", "暂停监听", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+/// 托盘菜单项句柄；语言切换时由 update_settings 刷新文本，暂停切换时改 pause 文本。
+pub struct TrayItems {
+    pub open: MenuItem<tauri::Wry>,
+    pub pause: MenuItem<tauri::Wry>,
+    pub quit: MenuItem<tauri::Wry>,
+}
+
+fn build_tray(app: &App, lang: &str) -> tauri::Result<()> {
+    let open_item = MenuItem::with_id(app, "open", i18n::tray_open(lang), true, None::<&str>)?;
+    let pause_item = MenuItem::with_id(app, "pause", i18n::tray_pause(lang, false), true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", i18n::tray_quit(lang), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_item, &pause_item, &quit_item])?;
 
-    let mut builder = TrayIconBuilder::new()
+    app.manage(TrayItems {
+        open: open_item.clone(),
+        pause: pause_item.clone(),
+        quit: quit_item.clone(),
+    });
+
+    let mut builder = TrayIconBuilder::with_id("tray")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("SnapCode 闪码")
+        .tooltip(i18n::app_name(lang))
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => show_main_window(app),
             "pause" => {
                 if let Some(state) = app.try_state::<Arc<AppState>>() {
                     let paused = !state.paused.load(Ordering::SeqCst);
                     commands::set_paused_impl(app, state.inner(), paused);
-                    let _ = pause_item.set_text(if paused { "恢复监听" } else { "暂停监听" });
+                    let _ = pause_item.set_text(i18n::tray_pause(&state.lang(), paused));
                 }
             }
             "quit" => app.exit(0),
@@ -130,7 +144,7 @@ pub fn run() {
             }
 
             // 托盘
-            build_tray(app)?;
+            build_tray(app, &settings.language)?;
 
             // 全局快捷键
             if let Err(e) = hotkey::register_from_settings(&app_handle, &state) {

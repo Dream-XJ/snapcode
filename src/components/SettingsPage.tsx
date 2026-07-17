@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ShortcutRecorder } from "@/components/ShortcutRecorder";
+import { toLang, useI18n, type Lang, type MessageKey } from "@/lib/i18n";
 import {
   clearHistory,
   dumpNotifications,
@@ -53,10 +54,16 @@ function Row({ label, desc, control }: { label: string; desc?: string; control?:
   );
 }
 
-const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "浅色", icon: Sun },
-  { value: "dark", label: "深色", icon: Moon },
-  { value: "system", label: "跟随系统", icon: Monitor },
+const THEME_OPTIONS: { value: Theme; labelKey: MessageKey; icon: typeof Sun }[] = [
+  { value: "light", labelKey: "theme.light", icon: Sun },
+  { value: "dark", labelKey: "theme.dark", icon: Moon },
+  { value: "system", labelKey: "theme.system", icon: Monitor },
+];
+
+/** 语言选项标签自命名，不随界面语言变化 */
+const LANG_OPTIONS: { value: Lang; label: string }[] = [
+  { value: "zh-CN", label: "中文" },
+  { value: "en", label: "English" },
 ];
 
 export function SettingsPage({
@@ -68,6 +75,7 @@ export function SettingsPage({
   onThemeChange,
   onClearHistory,
 }: SettingsPageProps) {
+  const { t, lang } = useI18n();
   const [newAumid, setNewAumid] = useState("");
   const [simText, setSimText] = useState("");
   const [simBusy, setSimBusy] = useState(false);
@@ -109,13 +117,13 @@ export function SettingsPage({
     }
   }
 
-  const meta = statusMeta(status?.state ?? "starting");
+  const meta = statusMeta(status?.state ?? "starting", lang);
 
   function addAumid() {
     const v = newAumid.trim();
     if (!v) return;
     if (settings.aumids.includes(v)) {
-      toast.error("该来源已存在");
+      toast.error(t("settings.sourceExists"));
       return;
     }
     setNewAumid("");
@@ -128,8 +136,8 @@ export function SettingsPage({
     setSimBusy(true);
     try {
       const code = await simulateNotification(text);
-      if (code) toast.success(`识别到验证码 ${code}`);
-      else toast.info("未识别到验证码");
+      if (code) toast.success(t("settings.simFound", { code }));
+      else toast.info(t("settings.simNotFound"));
       setSimText("");
     } catch (e) {
       toast.error(String(e));
@@ -139,11 +147,11 @@ export function SettingsPage({
   }
 
   async function handleClear() {
-    if (!window.confirm("确定要清空全部历史记录吗？此操作不可撤销。")) return;
+    if (!window.confirm(t("settings.clearConfirm"))) return;
     try {
       await clearHistory();
       onClearHistory();
-      toast.success("历史记录已清空");
+      toast.success(t("settings.cleared"));
     } catch (e) {
       toast.error(String(e));
     }
@@ -151,7 +159,7 @@ export function SettingsPage({
 
   return (
     <div className="h-full space-y-3 overflow-y-auto p-3">
-      <Section title="通知监听">
+      <Section title={t("settings.sectionListener")}>
         <div className="py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -161,10 +169,10 @@ export function SettingsPage({
             {status?.state === "access_denied" && (
               <div className="flex shrink-0 gap-2">
                 <Button size="sm" variant="outline" onClick={() => void openNotificationSettings()}>
-                  打开系统设置
+                  {t("common.openSystemSettings")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => void retryListener()}>
-                  重新检测
+                  {t("common.retry")}
                 </Button>
               </div>
             )}
@@ -175,19 +183,19 @@ export function SettingsPage({
                 className="shrink-0"
                 onClick={() => void retryListener()}
               >
-                重新检测
+                {t("common.retry")}
               </Button>
             )}
           </div>
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-            {status?.message ?? "SnapCode 通过读取 Windows 通知识别短信验证码。"}
+            {status?.message ?? t("settings.listenerDefaultDesc")}
           </p>
         </div>
       </Section>
 
-      <Section title="外观">
+      <Section title={t("settings.sectionAppearance")}>
         <Row
-          label="主题"
+          label={t("settings.theme")}
           control={
             <div className="flex rounded-lg bg-muted p-0.5">
               {THEME_OPTIONS.map((o) => {
@@ -206,6 +214,31 @@ export function SettingsPage({
                     )}
                   >
                     <Icon className="h-3.5 w-3.5" />
+                    {t(o.labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+          }
+        />
+        <Row
+          label={t("settings.language")}
+          control={
+            <div className="flex rounded-lg bg-muted p-0.5">
+              {LANG_OPTIONS.map((o) => {
+                const active = toLang(settings.language) === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => void save({ language: o.value })}
+                    className={cn(
+                      "flex h-7 items-center rounded-md px-2.5 text-xs transition-colors",
+                      active
+                        ? "bg-background shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
                     {o.label}
                   </button>
                 );
@@ -215,10 +248,10 @@ export function SettingsPage({
         />
       </Section>
 
-      <Section title="全局快捷键">
+      <Section title={t("settings.sectionShortcut")}>
         <Row
-          label="粘贴快捷键"
-          desc="在任意应用中按下，即可粘贴最新验证码"
+          label={t("settings.shortcutLabel")}
+          desc={t("settings.shortcutDesc")}
           control={
             <ShortcutRecorder
               value={settings.shortcut}
@@ -229,10 +262,10 @@ export function SettingsPage({
         />
       </Section>
 
-      <Section title="行为">
+      <Section title={t("settings.sectionBehavior")}>
         <Row
-          label="自动复制"
-          desc="识别到验证码后立即写入剪贴板"
+          label={t("settings.autoCopy")}
+          desc={t("settings.autoCopyDesc")}
           control={
             <Switch
               checked={settings.auto_copy}
@@ -241,8 +274,8 @@ export function SettingsPage({
           }
         />
         <Row
-          label="开机自启"
-          desc="登录 Windows 后自动启动 SnapCode"
+          label={t("settings.autostart")}
+          desc={t("settings.autostartDesc")}
           control={
             <Switch
               checked={settings.autostart}
@@ -252,21 +285,21 @@ export function SettingsPage({
         />
       </Section>
 
-      <Section title="通知来源">
+      <Section title={t("settings.sectionSources")}>
         <div className="py-3">
-          <p className="text-xs text-muted-foreground">仅监听以下应用（AUMID）的通知</p>
+          <p className="text-xs text-muted-foreground">{t("settings.sourcesDesc")}</p>
           <div className="mt-2 space-y-1">
             {settings.aumids.map((a) => (
               <div key={a} className="flex items-center gap-2 rounded-md py-1">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm">{sourceDisplayName(a)}</p>
+                  <p className="text-sm">{sourceDisplayName(a, lang)}</p>
                   <p className="truncate font-mono text-[11px] text-muted-foreground">{a}</p>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  title="移除"
+                  title={t("common.remove")}
                   onClick={() => void save({ aumids: settings.aumids.filter((x) => x !== a) })}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -281,11 +314,11 @@ export function SettingsPage({
               onKeyDown={(e) => {
                 if (e.key === "Enter") addAumid();
               }}
-              placeholder="添加 AUMID…"
+              placeholder={t("settings.aumidPlaceholder")}
               className="h-8 font-mono text-xs"
             />
             <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={addAumid}>
-              添加
+              {t("settings.add")}
             </Button>
           </div>
           {!settings.aumids.includes(DEFAULT_AUMID) && (
@@ -295,33 +328,33 @@ export function SettingsPage({
               className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
             >
               <RotateCcw className="h-3 w-3" />
-              恢复默认来源（手机连接）
+              {t("settings.restoreDefaultSource")}
             </button>
           )}
         </div>
       </Section>
 
-      <Section title="历史记录">
+      <Section title={t("settings.sectionHistory")}>
         <Row
-          label="保留策略"
-          desc="过期记录将自动清理"
+          label={t("settings.retention")}
+          desc={t("settings.retentionDesc")}
           control={
             <select
               value={settings.retention_days}
               onChange={(e) => void save({ retention_days: Number(e.target.value) })}
               className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              <option value={1}>1 天</option>
-              <option value={3}>3 天</option>
-              <option value={7}>7 天</option>
-              <option value={30}>30 天</option>
-              <option value={0}>永久保留</option>
+              <option value={1}>{t("settings.retentionDay1")}</option>
+              <option value={3}>{t("settings.retentionDays", { n: 3 })}</option>
+              <option value={7}>{t("settings.retentionDays", { n: 7 })}</option>
+              <option value={30}>{t("settings.retentionDays", { n: 30 })}</option>
+              <option value={0}>{t("settings.retentionForever")}</option>
             </select>
           }
         />
         <Row
-          label="清空历史"
-          desc="删除全部已捕获的验证码记录"
+          label={t("settings.clearLabel")}
+          desc={t("settings.clearDesc")}
           control={
             <Button
               size="sm"
@@ -329,22 +362,20 @@ export function SettingsPage({
               className="text-destructive hover:text-destructive"
               onClick={() => void handleClear()}
             >
-              清空全部
+              {t("settings.clearAll")}
             </Button>
           }
         />
       </Section>
 
-      <Section title="调试">
+      <Section title={t("settings.sectionDebug")}>
         <div className="space-y-2 py-3">
-          <p className="text-xs text-muted-foreground">
-            模拟收到一条短信通知，走完整的识别与入库流程
-          </p>
+          <p className="text-xs text-muted-foreground">{t("settings.simDesc")}</p>
           <textarea
             value={simText}
             onChange={(e) => setSimText(e.target.value)}
             rows={3}
-            placeholder="例如：【微信】您的验证码是 482913，5 分钟内有效。"
+            placeholder={t("settings.simPlaceholder")}
             className="w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           <div className="flex justify-end">
@@ -354,15 +385,12 @@ export function SettingsPage({
               disabled={!simText.trim() || simBusy}
               onClick={() => void handleSimulate()}
             >
-              模拟通知
+              {t("settings.simulate")}
             </Button>
           </div>
         </div>
         <div className="space-y-2 py-3">
-          <p className="text-xs text-muted-foreground">
-            抓取不到验证码时，列出当前系统中的 Toast 通知，确认「手机连接」的真实来源
-            AUMID 并一键加入监听列表
-          </p>
+          <p className="text-xs text-muted-foreground">{t("settings.dumpDesc")}</p>
           <div className="flex justify-end">
             <Button
               size="sm"
@@ -370,43 +398,43 @@ export function SettingsPage({
               disabled={dumpBusy}
               onClick={() => void handleDump()}
             >
-              列出系统通知
+              {t("settings.dump")}
             </Button>
           </div>
           {dumpError ? <p className="text-xs text-destructive">{dumpError}</p> : null}
           {dumpList && dumpList.length === 0 ? (
-            <p className="text-xs text-muted-foreground">当前没有系统通知</p>
+            <p className="text-xs text-muted-foreground">{t("settings.dumpEmpty")}</p>
           ) : null}
-          {dumpList?.map((t, i) => (
+          {dumpList?.map((info, i) => (
             <div key={i} className="space-y-1 rounded-md border p-2">
               <div className="flex items-start justify-between gap-2">
                 <p className="break-all font-mono text-[11px] leading-relaxed text-muted-foreground">
-                  {t.aumid || "(无 AUMID)"}
+                  {info.aumid || t("settings.dumpNoAumid")}
                 </p>
-                {t.aumid && !settings.aumids.includes(t.aumid) ? (
+                {info.aumid && !settings.aumids.includes(info.aumid) ? (
                   <Button
                     size="sm"
                     variant="ghost"
                     className="h-6 shrink-0 px-2 text-xs"
-                    onClick={() => addDumpedSource(t.aumid)}
+                    onClick={() => addDumpedSource(info.aumid)}
                   >
                     <Plus className="mr-1 h-3 w-3" />
-                    加为来源
+                    {t("settings.dumpAdd")}
                   </Button>
                 ) : null}
               </div>
-              {t.title ? <p className="truncate text-xs">{t.title}</p> : null}
-              {t.body ? (
-                <p className="truncate text-xs text-muted-foreground">{t.body}</p>
+              {info.title ? <p className="truncate text-xs">{info.title}</p> : null}
+              {info.body ? (
+                <p className="truncate text-xs text-muted-foreground">{info.body}</p>
               ) : null}
             </div>
           ))}
         </div>
       </Section>
 
-      <Section title="关于">
-        <Row label="SnapCode 闪码" desc="v0.1.0 · Windows 短信验证码捕获工具" />
-        <Row label="数据存储" desc="全部数据仅保存在本机，不会上传" />
+      <Section title={t("settings.sectionAbout")}>
+        <Row label={t("app.name")} desc={t("settings.aboutDesc")} />
+        <Row label={t("settings.dataLabel")} desc={t("settings.dataDesc")} />
       </Section>
     </div>
   );

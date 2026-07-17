@@ -1,5 +1,6 @@
 import { History, Settings as SettingsIcon, type LucideIcon } from "lucide-react";
 
+import { useI18n, type MessageKey } from "@/lib/i18n";
 import { cn, statusMeta } from "@/lib/utils";
 import type { ListenerState, Tab } from "@/types";
 
@@ -9,13 +10,14 @@ interface TopBarProps {
   onTabChange: (tab: Tab) => void;
 }
 
-const TABS: { value: Tab; label: string; icon: LucideIcon }[] = [
-  { value: "history", label: "历史", icon: History },
-  { value: "settings", label: "设置", icon: SettingsIcon },
+const TABS: { value: Tab; labelKey: MessageKey; icon: LucideIcon }[] = [
+  { value: "history", labelKey: "tabs.history", icon: History },
+  { value: "settings", labelKey: "tabs.settings", icon: SettingsIcon },
 ];
 
 export function TopBar({ status, tab, onTabChange }: TopBarProps) {
-  const meta = statusMeta(status?.state ?? "starting");
+  const { t, lang } = useI18n();
+  const meta = statusMeta(status?.state ?? "starting", lang);
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
       <div className="flex items-center gap-2.5">
@@ -29,14 +31,14 @@ export function TopBar({ status, tab, onTabChange }: TopBarProps) {
         </span>
       </div>
       <nav className="flex rounded-lg bg-muted p-0.5">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = tab === t.value;
+        {TABS.map((tab_) => {
+          const Icon = tab_.icon;
+          const active = tab === tab_.value;
           return (
             <button
-              key={t.value}
+              key={tab_.value}
               type="button"
-              onClick={() => onTabChange(t.value)}
+              onClick={() => onTabChange(tab_.value)}
               className={cn(
                 "flex h-7 items-center gap-1.5 rounded-md px-3 text-xs transition-colors",
                 active
@@ -45,7 +47,7 @@ export function TopBar({ status, tab, onTabChange }: TopBarProps) {
               )}
             >
               <Icon className="h-3.5 w-3.5" />
-              {t.label}
+              {t(tab_.labelKey)}
             </button>
           );
         })}
