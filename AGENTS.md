@@ -73,9 +73,10 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 
 ## 发布流程
 
-1. `node scripts/bump-version.mjs x.y.z` 同步版本号后提交；
-2. `git tag vx.y.z` 并推送 tag，触发 `.github/workflows/release.yml`（Windows runner，tauri-action 构建 NSIS/MSI 安装包；仓库 Secret `TAURI_SIGNING_PRIVATE_KEY` 存在时自动签名更新包并上传 `latest.json`，一键更新依赖它）；
-3. Workflow 先校验 tag 与 `tauri.conf.json` 版本一致，再创建**草稿** Release，确认无误后在 GitHub 手动 Publish。
+1. 先把该版本的发布说明写入 `RELEASE_NOTES.md`（workflow 会校验其中包含当前版本号；它同时用作草稿正文与 `latest.json` 的 notes——即应用内更新弹窗展示的更新说明）；
+2. `node scripts/bump-version.mjs x.y.z` 同步版本号后提交；
+3. `git tag vx.y.z` 并推送 tag，触发 `.github/workflows/release.yml`（Windows runner，tauri-action 构建 NSIS/MSI 安装包；仓库 Secret `TAURI_SIGNING_PRIVATE_KEY` 存在时自动签名更新包并上传 `latest.json`，一键更新依赖它）；
+4. Workflow 先校验 tag 与 `tauri.conf.json` 版本一致，再创建**草稿** Release，确认无误后在 GitHub 手动 Publish。
 
 ## 前后端契约（改动必读）
 

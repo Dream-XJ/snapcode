@@ -26,6 +26,10 @@ jobs:
           if ($conf.version -ne $tag) {
             throw "Tag v$tag 与 tauri.conf.json 版本 $($conf.version) 不一致，请先运行 node scripts/bump-version.mjs $tag"
           }
+          $notes = Get-Content -Raw RELEASE_NOTES.md
+          if ($notes -notmatch [regex]::Escape("v$tag")) {
+            throw "RELEASE_NOTES.md 未包含当前版本 v$tag 的发布说明，请先更新该文件"
+          }
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,9 +48,18 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # 发布说明（RELEASE_NOTES.md）同时写入草稿正文与 latest.json 的 notes（应用内更新弹窗展示的内容）
+      - name: Read release notes
+        id: notes
+        shell: pwsh
+        run: |
+          "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+          Get-Content -Raw RELEASE_NOTES.md >> $env:GITHUB_OUTPUT
+          "RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+
       # tauri-action 在 tag 推送触发时创建 Release 并上传 NSIS/MSI 安装包；
       # 检测到签名私钥时会同时生成签名更新包与 latest.json（应用内一键更新依赖它）。
-      # releaseDraft 置为草稿以便先编辑发布说明；确认无误后在 Releases 页面手动 Publish，
+      # releaseDraft 置为草稿以便检查后再发布；确认无误后在 Releases 页面手动 Publish，
       # 想全自动发布则改为 false。
       - name: Build and create GitHub Release
         uses: tauri-apps/tauri-action@v0
@@ -58,6 +71,7 @@ jobs:
           # 必须显式给出 tagName，否则 tauri-action 跳过 Release 创建与产物上传
           tagName: v__VERSION__
           releaseName: 'SnapCode v__VERSION__'
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           # latest.json 明确选用 MSI（原位升级；NSIS 会装出第二份），false 也是 tauri-action 默认值
