@@ -55,6 +55,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # 必须显式给出 tagName，否则 tauri-action 跳过 Release 创建与产物上传
+          tagName: v__VERSION__
           releaseName: 'SnapCode v__VERSION__'
           releaseDraft: true
           prerelease: false
