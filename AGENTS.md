@@ -67,7 +67,14 @@ npm run tauri dev            # 桌面开发模式（前端热更新 + 真实 Rus
 npm run tauri build          # 打包发布版本
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust 单测（parser + hotkey）—— 提交前必过
 node scripts/gen-icon.mjs    # 重新生成应用图标（输出 src-tauri/icons/）
+node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）
 ```
+
+## 发布流程
+
+1. `node scripts/bump-version.mjs x.y.z` 同步版本号后提交；
+2. `git tag vx.y.z` 并推送 tag，触发 `.github/workflows/release.yml`（Windows runner，tauri-action 构建 NSIS/MSI 安装包）；
+3. Workflow 先校验 tag 与 `tauri.conf.json` 版本一致，再创建**草稿** Release，确认无误后在 GitHub 手动 Publish。
 
 ## 前后端契约（改动必读）
 

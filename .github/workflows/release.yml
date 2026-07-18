@@ -1,0 +1,57 @@
+name: Release
+
+# 推送 v* 形式的版本 tag（如 v0.2.0）时自动构建并创建 GitHub Release。
+# tag 中的版本号必须与 src-tauri/tauri.conf.json 的 version 一致（用 scripts/bump-version.mjs 保证）。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # 允许 GITHUB_TOKEN 创建 Release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify tag matches app version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $conf = Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json
+          if ($conf.version -ne $tag) {
+            throw "Tag v$tag 与 tauri.conf.json 版本 $($conf.version) 不一致，请先运行 node scripts/bump-version.mjs $tag"
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # tauri-action 在 tag 推送触发时会以该 tag 创建 Release，并上传 NSIS/MSI 安装包。
+      # releaseDraft 置为草稿以便先编辑发布说明；确认无误后在 Releases 页面手动 Publish，
+      # 想全自动发布则改为 false。
+      - name: Build and create GitHub Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseName: 'SnapCode v__VERSION__'
+          releaseDraft: true
+          prerelease: false
