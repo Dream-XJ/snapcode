@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Monitor, Moon, Plus, RotateCcw, Sun, Trash2 } from "lucide-react";
+import { ChevronDown, Monitor, Moon, Plus, RotateCcw, Sun, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   clearHistory,
   dumpNotifications,
   getEmailStatus,
+  newEmailAccount,
   onEmailStatus,
   openNotificationSettings,
   retryListener,
@@ -21,7 +22,15 @@ import {
 } from "@/lib/tauri";
 import type { Theme } from "@/lib/theme";
 import { cn, DEFAULT_AUMID, sourceDisplayName, statusMeta } from "@/lib/utils";
-import type { EmailSettings, EmailState, ListenerState, Settings, ToastInfo } from "@/types";
+import type {
+  EmailAccount,
+  EmailAccountStatus,
+  EmailProtocol,
+  EmailStateName,
+  ListenerState,
+  Settings,
+  ToastInfo,
+} from "@/types";
 
 interface SettingsPageProps {
   settings: Settings;
@@ -35,12 +44,22 @@ interface SettingsPageProps {
   onCheckUpdate: () => Promise<void>;
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  /** 标题栏右侧操作区（如「添加账户」按钮） */
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="overflow-hidden rounded-xl border bg-card">
-      <h2 className="border-b bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">
-        {title}
-      </h2>
+      <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
+        <h2 className="text-xs font-medium text-muted-foreground">{title}</h2>
+        {action}
+      </div>
       <div className="divide-y px-4">{children}</div>
     </section>
   );
@@ -72,6 +91,195 @@ const LANG_OPTIONS: { value: Lang; label: string }[] = [
   { value: "en", label: "English" },
 ];
 
+/**
+ * 单个邮箱账户的编辑表单。
+ * 文本字段草稿本地管理（失焦才保存，避免每次击键都触发整体设置更新）；
+ * 父组件必须带 key={account.id}，保证切换账户时草稿不串。
+ */
+function EmailAccountEditor({
+  account,
+  onSave,
+}: {
+  account: EmailAccount;
+  onSave: (patch: Partial<EmailAccount>) => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState({
+    name: account.name,
+    host: account.host,
+    username: account.username,
+    password: account.password,
+  });
+  const [portText, setPortText] = useState(String(account.port));
+  const [testBusy, setTestBusy] = useState(false);
+
+  // 持久化值外部变化（保存回写 / 其他途径更新）后重置草稿，避免旧草稿覆盖新值
+  useEffect(() => {
+    setDraft({
+      name: account.name,
+      host: account.host,
+      username: account.username,
+      password: account.password,
+    });
+    setPortText(String(account.port));
+  }, [account]);
+
+  /** 失焦保存：与已持久化值比较，未变化不发请求 */
+  function blurSave(patch: Partial<EmailAccount>) {
+    const next = { ...account, ...patch };
+    if (JSON.stringify(next) === JSON.stringify(account)) return;
+    onSave(patch);
+  }
+
+  function blurPort() {
+    const port = Number(portText.trim());
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      toast.error(t("settings.emailPortInvalid"));
+      setPortText(String(account.port));
+      return;
+    }
+    blurSave({ port });
+  }
+
+  /** 端口恰为另一协议的 TLS 默认端口（995↔993）时随协议联动切换，免去手动改端口 */
+  function handleProtocol(protocol: EmailProtocol) {
+    const patch: Partial<EmailAccount> = { protocol };
+    if (protocol === "imap" && account.port === 995) patch.port = 993;
+    else if (protocol === "pop3" && account.port === 993) patch.port = 995;
+    if (patch.port) setPortText(String(patch.port));
+    onSave(patch);
+  }
+
+  /** 测试连接用表单当前草稿值（可能尚未保存） */
+  async function handleTest() {
+    if (testBusy) return;
+    setTestBusy(true);
+    try {
+      const cfg: EmailAccount = {
+        ...account,
+        ...draft,
+        name: draft.name.trim(),
+        host: draft.host.trim(),
+        username: draft.username.trim(),
+        port: Number(portText.trim()) || 0,
+      };
+      const n = await testEmailConnection(cfg);
+      toast.success(t("settings.emailTestOk", { n }));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailName")}</p>
+          <Input
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            onBlur={() => blurSave({ name: draft.name.trim() })}
+            placeholder={t("settings.emailNamePlaceholder")}
+            className="h-8 text-xs"
+          />
+        </div>
+        <div className="w-36 shrink-0">
+          <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailProtocol")}</p>
+          <select
+            value={account.protocol}
+            onChange={(e) => handleProtocol(e.target.value as EmailProtocol)}
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="pop3">{t("settings.emailProtocolPop3")}</option>
+            <option value="imap">{t("settings.emailProtocolImap")}</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailHost")}</p>
+          <Input
+            value={draft.host}
+            onChange={(e) => setDraft({ ...draft, host: e.target.value })}
+            onBlur={() => blurSave({ host: draft.host.trim() })}
+            placeholder={t("settings.emailHostPlaceholder")}
+            className="h-8 font-mono text-xs"
+          />
+        </div>
+        <div className="w-20 shrink-0">
+          <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailPort")}</p>
+          <Input
+            value={portText}
+            onChange={(e) => setPortText(e.target.value)}
+            onBlur={blurPort}
+            className="h-8 font-mono text-xs"
+          />
+        </div>
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailUser")}</p>
+        <Input
+          value={draft.username}
+          onChange={(e) => setDraft({ ...draft, username: e.target.value })}
+          onBlur={() => blurSave({ username: draft.username.trim() })}
+          placeholder={t("settings.emailUserPlaceholder")}
+          className="h-8 font-mono text-xs"
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailPass")}</p>
+        <Input
+          type="password"
+          value={draft.password}
+          onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+          onBlur={() => blurSave({ password: draft.password })}
+          placeholder={t("settings.emailPassPlaceholder")}
+          autoComplete="off"
+          className="h-8 font-mono text-xs"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-muted-foreground">{t("settings.emailInterval")}</p>
+          <select
+            value={account.poll_interval_secs}
+            onChange={(e) => onSave({ poll_interval_secs: Number(e.target.value) })}
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value={30}>{t("settings.intervalSeconds", { n: 30 })}</option>
+            <option value={60}>{t("settings.intervalMinutes", { n: 1 })}</option>
+            <option value={120}>{t("settings.intervalMinutes", { n: 2 })}</option>
+            <option value={300}>{t("settings.intervalMinutes", { n: 5 })}</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-muted-foreground">{t("settings.emailTls")}</p>
+          <Switch checked={account.use_tls} onCheckedChange={(v) => onSave({ use_tls: v })} />
+        </div>
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {t("settings.emailIntervalHint")}
+      </p>
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {t("settings.emailBaselineHint")}
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          disabled={testBusy}
+          onClick={() => void handleTest()}
+        >
+          {testBusy ? t("settings.emailTesting") : t("settings.emailTest")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage({
   settings,
   onSettingsChange,
@@ -90,59 +298,48 @@ export function SettingsPage({
   const [dumpBusy, setDumpBusy] = useState(false);
   const [dumpError, setDumpError] = useState<string | null>(null);
   const [checkBusy, setCheckBusy] = useState(false);
-  /** 邮箱表单草稿：文本框失焦才保存，避免每次击键都触发整体设置更新 */
-  const [emailDraft, setEmailDraft] = useState<EmailSettings>({ ...settings.email });
-  const [emailPortText, setEmailPortText] = useState(String(settings.email.port));
-  const [emailStatus, setEmailStatus] = useState<EmailState | null>(null);
-  const [testBusy, setTestBusy] = useState(false);
+  /** 各邮箱账户的轮询状态（email-status 事件 payload，按 account_id 排序） */
+  const [emailStatusList, setEmailStatusList] = useState<EmailAccountStatus[]>([]);
+  /** 展开编辑表单的账户 id 集合；卡片默认收起 */
+  const [expandedEmailIds, setExpandedEmailIds] = useState<ReadonlySet<string>>(new Set());
 
   // 订阅邮箱轮询状态（初始拉取 + email-status 事件）
   useEffect(() => {
     getEmailStatus()
-      .then(setEmailStatus)
+      .then(setEmailStatusList)
       .catch(() => undefined);
-    return onEmailStatus(setEmailStatus);
+    return onEmailStatus(setEmailStatusList);
   }, []);
 
-  /** 邮箱字段失焦保存：与已持久化值比较，未变化不发请求 */
-  function blurSaveEmail(patch: Partial<EmailSettings>) {
-    const next = { ...settings.email, ...patch };
-    if (JSON.stringify(next) === JSON.stringify(settings.email)) return;
-    void save({ email: next });
+  /** 账户列表整体替换保存 */
+  function saveAccounts(accounts: EmailAccount[]) {
+    void save({ email: { accounts } });
   }
 
-  function blurEmailPort() {
-    const port = Number(emailPortText.trim());
-    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-      toast.error(t("settings.emailPortInvalid"));
-      setEmailPortText(String(settings.email.port));
-      return;
-    }
-    blurSaveEmail({ port });
+  function updateAccount(id: string, patch: Partial<EmailAccount>) {
+    saveAccounts(settings.email.accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   }
 
-  /** 测试连接用表单当前草稿值（可能尚未保存） */
-  async function handleTestEmail() {
-    if (testBusy) return;
-    setTestBusy(true);
-    try {
-      const cfg: EmailSettings = {
-        ...emailDraft,
-        host: emailDraft.host.trim(),
-        username: emailDraft.username.trim(),
-        port: Number(emailPortText.trim()) || 0,
-      };
-      const n = await testEmailConnection(cfg);
-      toast.success(t("settings.emailTestOk", { n }));
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setTestBusy(false);
-    }
+  function addAccount() {
+    saveAccounts([...settings.email.accounts, newEmailAccount()]);
   }
 
-  const emailMeta = (() => {
-    switch (emailStatus?.state) {
+  function removeAccount(id: string) {
+    saveAccounts(settings.email.accounts.filter((a) => a.id !== id));
+  }
+
+  function toggleEmailExpanded(id: string) {
+    setExpandedEmailIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** 单账户状态点颜色与文案；无状态记录（后端从未上报）按未启用显示 */
+  function emailMeta(state: EmailStateName | undefined) {
+    switch (state) {
       case "running":
         return { dot: "bg-emerald-500", text: t("email.status.running") };
       case "paused":
@@ -152,7 +349,7 @@ export function SettingsPage({
       default:
         return { dot: "bg-zinc-400", text: t("email.status.disabled") };
     }
-  })();
+  }
 
   /** 拉取当前系统 Toast 列表，用于诊断来源过滤 */
   async function handleDump() {
@@ -418,107 +615,76 @@ export function SettingsPage({
         </div>
       </Section>
 
-      <Section title={t("settings.sectionEmail")}>
-        <div className="py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", emailMeta.dot)} />
-              <p className="truncate text-sm">{emailMeta.text}</p>
-            </div>
-            <Switch
-              checked={settings.email.enabled}
-              onCheckedChange={(v) => void save({ email: { ...settings.email, enabled: v } })}
-            />
-          </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-            {emailStatus?.message ?? t("settings.emailDesc")}
-          </p>
-        </div>
-
+      <Section
+        title={t("settings.sectionEmail")}
+        action={
+          <Button size="sm" variant="outline" className="h-7" onClick={addAccount}>
+            <Plus className="mr-1 h-3 w-3" />
+            {t("settings.emailAdd")}
+          </Button>
+        }
+      >
         <div className="space-y-2 py-3">
-          <div className="flex gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailHost")}</p>
-              <Input
-                value={emailDraft.host}
-                onChange={(e) => setEmailDraft({ ...emailDraft, host: e.target.value })}
-                onBlur={() => blurSaveEmail({ host: emailDraft.host.trim() })}
-                placeholder={t("settings.emailHostPlaceholder")}
-                className="h-8 font-mono text-xs"
-              />
-            </div>
-            <div className="w-20 shrink-0">
-              <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailPort")}</p>
-              <Input
-                value={emailPortText}
-                onChange={(e) => setEmailPortText(e.target.value)}
-                onBlur={blurEmailPort}
-                className="h-8 font-mono text-xs"
-              />
-            </div>
-          </div>
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailUser")}</p>
-            <Input
-              value={emailDraft.username}
-              onChange={(e) => setEmailDraft({ ...emailDraft, username: e.target.value })}
-              onBlur={() => blurSaveEmail({ username: emailDraft.username.trim() })}
-              placeholder={t("settings.emailUserPlaceholder")}
-              className="h-8 font-mono text-xs"
-            />
-          </div>
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailPass")}</p>
-            <Input
-              type="password"
-              value={emailDraft.password}
-              onChange={(e) => setEmailDraft({ ...emailDraft, password: e.target.value })}
-              onBlur={() => blurSaveEmail({ password: emailDraft.password })}
-              placeholder={t("settings.emailPassPlaceholder")}
-              autoComplete="off"
-              className="h-8 font-mono text-xs"
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground">{t("settings.emailInterval")}</p>
-              <select
-                value={settings.email.poll_interval_secs}
-                onChange={(e) =>
-                  void save({
-                    email: { ...settings.email, poll_interval_secs: Number(e.target.value) },
-                  })
-                }
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value={30}>{t("settings.intervalSeconds", { n: 30 })}</option>
-                <option value={60}>{t("settings.intervalMinutes", { n: 1 })}</option>
-                <option value={120}>{t("settings.intervalMinutes", { n: 2 })}</option>
-                <option value={300}>{t("settings.intervalMinutes", { n: 5 })}</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground">{t("settings.emailTls")}</p>
-              <Switch
-                checked={settings.email.use_tls}
-                onCheckedChange={(v) => void save({ email: { ...settings.email, use_tls: v } })}
-              />
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {t("settings.emailBaselineHint")}
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              disabled={testBusy}
-              onClick={() => void handleTestEmail()}
-            >
-              {testBusy ? t("settings.emailTesting") : t("settings.emailTest")}
-            </Button>
-          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {t("settings.emailDesc")}
+          </p>
+          {settings.email.accounts.map((account) => {
+            const st = emailStatusList.find((s) => s.account_id === account.id);
+            const meta = emailMeta(st?.state);
+            const expanded = expandedEmailIds.has(account.id);
+            return (
+              <div key={account.id} className="rounded-lg border px-3">
+                <div className="flex items-center gap-2 py-2.5">
+                  <span
+                    className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)}
+                    title={meta.text}
+                  />
+                  <p className="min-w-0 truncate text-sm">
+                    {account.name.trim() || account.username.trim() || t("settings.emailUntitled")}
+                  </p>
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                    {account.protocol}
+                  </span>
+                  <div className="flex-1" />
+                  <Switch
+                    checked={account.enabled}
+                    onCheckedChange={(v) => updateAccount(account.id, { enabled: v })}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground"
+                    onClick={() => toggleEmailExpanded(account.id)}
+                  >
+                    <ChevronDown
+                      className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")}
+                    />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                    title={t("settings.emailDelete")}
+                    onClick={() => removeAccount(account.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                {st?.state === "error" && st.message ? (
+                  <p className="pb-2 text-xs leading-relaxed text-destructive">{st.message}</p>
+                ) : null}
+                {expanded ? (
+                  <div className="border-t py-3">
+                    <EmailAccountEditor
+                      key={account.id}
+                      account={account}
+                      onSave={(patch) => updateAccount(account.id, patch)}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </Section>
 

@@ -24,26 +24,40 @@ export interface Settings {
   email: EmailSettings;
 }
 
-/** 邮箱验证码监听（POP3 轮询）配置 */
-export interface EmailSettings {
+export type EmailProtocol = "pop3" | "imap";
+
+/** 单个邮箱账户配置（对应 Rust EmailAccount） */
+export interface EmailAccount {
+  /** 账户唯一 id，由前端生成 */
+  id: string;
+  /** 备注名；空时显示账号地址 */
+  name: string;
+  protocol: EmailProtocol;
   enabled: boolean;
-  /** POP3 服务器，如 pop.qq.com */
+  /** 服务器，如 pop.qq.com / imap.qq.com */
   host: string;
-  /** SSL/TLS 一般 995，明文 110 */
+  /** SSL/TLS 默认端口：POP3 995 / IMAP 993 */
   port: number;
   /** 邮箱账号（一般即完整地址） */
   username: string;
   /** 密码或客户端授权码（QQ/163 等需用授权码） */
   password: string;
-  /** true = POP3S 隐式 TLS */
+  /** true = 隐式 TLS */
   use_tls: boolean;
-  /** 轮询间隔秒数，最小 15 */
+  /** 轮询间隔秒数，最小 15；IMAP 仅在不支持 IDLE 时生效 */
   poll_interval_secs: number;
+}
+
+/** 邮箱验证码监听配置：多账户列表（对应 Rust EmailSettings） */
+export interface EmailSettings {
+  accounts: EmailAccount[];
 }
 
 export type EmailStateName = "disabled" | "running" | "paused" | "error";
 
-export interface EmailState {
+/** 单个账户的轮询状态（get_email_status 返回元素 / email-status 事件 payload） */
+export interface EmailAccountStatus {
+  account_id: string;
   state: EmailStateName;
   message: string | null;
 }

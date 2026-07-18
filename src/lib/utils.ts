@@ -10,7 +10,7 @@ export function cn(...inputs: ClassValue[]) {
 /** 默认监听来源（手机连接）。与 Rust 侧 settings.rs 的默认值保持一致 */
 export const DEFAULT_AUMID = "Microsoft.YourPhone_8wekyb3d8bbwe";
 
-/** 来源 → 显示名：YourPhone 显示为「手机连接 / Phone Link」，email: 前缀取邮箱地址，否则原样展示 */
+/** 来源 → 显示名：YourPhone 显示为「手机连接 / Phone Link」，email: 前缀取备注名或地址，否则原样展示 */
 export function sourceDisplayName(source: string, lang: Lang): string {
   if (source.includes("YourPhone")) return translate(lang, "source.phoneLink");
   if (source.startsWith("email:")) return source.slice("email:".length);

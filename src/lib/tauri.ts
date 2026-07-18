@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CodeRecord, EmailSettings, EmailState, ListenerState, Settings, ToastInfo, UpdateInfo, UpdateProgress } from "@/types";
+import type { CodeRecord, EmailAccount, EmailAccountStatus, ListenerState, Settings, ToastInfo, UpdateInfo, UpdateProgress } from "@/types";
 import pkg from "../../package.json";
 
 /**
@@ -62,11 +62,30 @@ export const checkUpdate = () => call<UpdateInfo | null>("check_update");
 /** 下载并安装更新；成功后进程由安装器接管退出，Promise 通常不会 resolve */
 export const installUpdate = () => call<void>("install_update");
 
-export const getEmailStatus = () => call<EmailState>("get_email_status");
+export const getEmailStatus = () => call<EmailAccountStatus[]>("get_email_status");
 
 /** 测试邮箱连接（表单当前值，可能未保存），成功返回邮箱中的邮件总数 */
-export const testEmailConnection = (config: EmailSettings) =>
+export const testEmailConnection = (config: EmailAccount) =>
   call<number>("test_email_connection", { config });
+
+/**
+ * 新建账户草稿：默认 IMAP + TLS（IDLE 实时推送为推荐用法）。
+ * id 前端本地生成（时间戳 + 随机串，碰撞概率可忽略），后端只把它当不透明键。
+ */
+export function newEmailAccount(): EmailAccount {
+  return {
+    id: `acc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+    name: "",
+    protocol: "imap",
+    enabled: true,
+    host: "",
+    port: 993,
+    username: "",
+    password: "",
+    use_tls: true,
+    poll_interval_secs: 60,
+  };
+}
 
 /* ---------- 事件 ---------- */
 
@@ -94,7 +113,7 @@ export const onShortcutError = (cb: (error: string | null) => void): Unlisten =>
 export const onUpdateProgress = (cb: (progress: UpdateProgress) => void): Unlisten =>
   subscribe("update-download-progress", cb);
 
-export const onEmailStatus = (cb: (state: EmailState) => void): Unlisten =>
+export const onEmailStatus = (cb: (list: EmailAccountStatus[]) => void): Unlisten =>
   subscribe("email-status", cb);
 
 /* ---------- 浏览器 Mock（仅在无 Tauri 运行时时使用） ---------- */
@@ -158,20 +177,17 @@ let mockSettings: Settings = {
   aumids: ["Microsoft.YourPhone_8wekyb3d8bbwe"],
   onboarded: true,
   language: "zh-CN",
-  // 与 Rust 侧 EmailSettings::default() 对齐
-  email: {
-    enabled: false,
-    host: "",
-    port: 995,
-    username: "",
-    password: "",
-    use_tls: true,
-    poll_interval_secs: 60,
-  },
+  // 与 Rust 侧 EmailSettings::default() 对齐（默认无账户）
+  email: { accounts: [] },
 };
 
 let mockStatus: ListenerState = { state: "running", message: null };
-let mockEmailStatus: EmailState = { state: "disabled", message: null };
+/** 各账户轮询状态列表（与 Rust 侧按 account_id 排序的 Vec 对齐） */
+let mockEmailStatus: EmailAccountStatus[] = [];
+
+/** accounts 为数组，浅拷贝会共享元素导致调用方改到内部状态，需逐账户拷贝 */
+const cloneEmailAccounts = (accounts: EmailAccount[]): EmailAccount[] =>
+  accounts.map((a) => ({ ...a }));
 let mockNextId = 100;
 
 async function mockInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
@@ -208,10 +224,18 @@ async function mockInvoke(cmd: string, args?: Record<string, unknown>): Promise<
       return rec.code;
     }
     case "get_settings":
-      return { ...mockSettings, aumids: [...mockSettings.aumids], email: { ...mockSettings.email } };
+      return {
+        ...mockSettings,
+        aumids: [...mockSettings.aumids],
+        email: { accounts: cloneEmailAccounts(mockSettings.email.accounts) },
+      };
     case "update_settings":
       mockSettings = args?.settings as Settings;
-      return { ...mockSettings, aumids: [...mockSettings.aumids], email: { ...mockSettings.email } };
+      return {
+        ...mockSettings,
+        aumids: [...mockSettings.aumids],
+        email: { accounts: cloneEmailAccounts(mockSettings.email.accounts) },
+      };
     case "get_listener_status":
       return mockStatus;
     case "retry_listener":
@@ -265,14 +289,18 @@ async function mockInvoke(cmd: string, args?: Record<string, unknown>): Promise<
     case "install_update":
       throw "浏览器预览模式不支持安装更新";
     case "get_email_status":
-      return mockEmailStatus;
+      return [...mockEmailStatus];
     case "test_email_connection": {
-      const cfg = args?.config as EmailSettings;
+      const cfg = args?.config as EmailAccount;
       if (!cfg.host.trim() || !cfg.username.trim() || !cfg.password) {
         throw "请先在设置中填写邮箱配置";
       }
-      // 预览模式模拟一次成功连接，并把状态切到轮询中便于预览 UI
-      mockEmailStatus = { state: "running", message: null };
+      // 预览模式模拟一次成功连接，并把该账户状态切到轮询中便于预览 UI
+      const next: EmailAccountStatus = { account_id: cfg.id, state: "running", message: null };
+      mockEmailStatus = [
+        ...mockEmailStatus.filter((s) => s.account_id !== cfg.id),
+        next,
+      ].sort((a, b) => a.account_id.localeCompare(b.account_id));
       mockEmit("email-status", mockEmailStatus);
       return 128;
     }
