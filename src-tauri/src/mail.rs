@@ -18,7 +18,8 @@ pub trait ReadWrite: Read + Write {}
 impl<T: Read + Write> ReadWrite for T {}
 
 /// 连接与读写超时：POP3 服务器挂机时避免监听线程永久阻塞。
-const IO_TIMEOUT: Duration = Duration::from_secs(15);
+/// pub(crate)：IMAP 连接（imap_client.rs）复用同一超时常量。
+pub(crate) const IO_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// 一封解析后的邮件，仅保留验证码提取与入库所需字段。
 #[derive(Clone, Debug)]
@@ -185,7 +186,8 @@ pub fn connect(cfg: &EmailSettings) -> Result<Pop3Client<Box<dyn ReadWrite>>, St
 }
 
 /// 在 TCP 上建立隐式 TLS（POP3S，995 端口惯例）。
-fn tls_wrap(
+/// pub(crate)：IMAP over SSL（993 端口惯例）经 imap_client.rs 复用同一 rustls 栈。
+pub(crate) fn tls_wrap(
     tcp: std::net::TcpStream,
     host: &str,
 ) -> Result<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>, String> {

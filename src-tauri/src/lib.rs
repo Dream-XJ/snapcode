@@ -2,6 +2,7 @@ mod commands;
 mod email_monitor;
 mod hotkey;
 mod i18n;
+mod imap_client;
 mod mail;
 mod notifications;
 mod parser;
