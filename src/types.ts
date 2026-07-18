@@ -21,6 +21,31 @@ export interface Settings {
   onboarded: boolean;
   /** 界面语言："zh-CN" | "en"（Rust 侧为 String，非 "en" 一律按中文） */
   language: string;
+  email: EmailSettings;
+}
+
+/** 邮箱验证码监听（POP3 轮询）配置 */
+export interface EmailSettings {
+  enabled: boolean;
+  /** POP3 服务器，如 pop.qq.com */
+  host: string;
+  /** SSL/TLS 一般 995，明文 110 */
+  port: number;
+  /** 邮箱账号（一般即完整地址） */
+  username: string;
+  /** 密码或客户端授权码（QQ/163 等需用授权码） */
+  password: string;
+  /** true = POP3S 隐式 TLS */
+  use_tls: boolean;
+  /** 轮询间隔秒数，最小 15 */
+  poll_interval_secs: number;
+}
+
+export type EmailStateName = "disabled" | "running" | "paused" | "error";
+
+export interface EmailState {
+  state: EmailStateName;
+  message: string | null;
 }
 
 export type ListenerStateName =

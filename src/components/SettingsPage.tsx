@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Monitor, Moon, Plus, RotateCcw, Sun, Trash2 } from "lucide-react";
 
@@ -11,14 +11,17 @@ import {
   APP_VERSION,
   clearHistory,
   dumpNotifications,
+  getEmailStatus,
+  onEmailStatus,
   openNotificationSettings,
   retryListener,
   simulateNotification,
+  testEmailConnection,
   updateSettings,
 } from "@/lib/tauri";
 import type { Theme } from "@/lib/theme";
 import { cn, DEFAULT_AUMID, sourceDisplayName, statusMeta } from "@/lib/utils";
-import type { ListenerState, Settings, ToastInfo } from "@/types";
+import type { EmailSettings, EmailState, ListenerState, Settings, ToastInfo } from "@/types";
 
 interface SettingsPageProps {
   settings: Settings;
@@ -87,6 +90,69 @@ export function SettingsPage({
   const [dumpBusy, setDumpBusy] = useState(false);
   const [dumpError, setDumpError] = useState<string | null>(null);
   const [checkBusy, setCheckBusy] = useState(false);
+  /** 邮箱表单草稿：文本框失焦才保存，避免每次击键都触发整体设置更新 */
+  const [emailDraft, setEmailDraft] = useState<EmailSettings>({ ...settings.email });
+  const [emailPortText, setEmailPortText] = useState(String(settings.email.port));
+  const [emailStatus, setEmailStatus] = useState<EmailState | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+
+  // 订阅邮箱轮询状态（初始拉取 + email-status 事件）
+  useEffect(() => {
+    getEmailStatus()
+      .then(setEmailStatus)
+      .catch(() => undefined);
+    return onEmailStatus(setEmailStatus);
+  }, []);
+
+  /** 邮箱字段失焦保存：与已持久化值比较，未变化不发请求 */
+  function blurSaveEmail(patch: Partial<EmailSettings>) {
+    const next = { ...settings.email, ...patch };
+    if (JSON.stringify(next) === JSON.stringify(settings.email)) return;
+    void save({ email: next });
+  }
+
+  function blurEmailPort() {
+    const port = Number(emailPortText.trim());
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      toast.error(t("settings.emailPortInvalid"));
+      setEmailPortText(String(settings.email.port));
+      return;
+    }
+    blurSaveEmail({ port });
+  }
+
+  /** 测试连接用表单当前草稿值（可能尚未保存） */
+  async function handleTestEmail() {
+    if (testBusy) return;
+    setTestBusy(true);
+    try {
+      const cfg: EmailSettings = {
+        ...emailDraft,
+        host: emailDraft.host.trim(),
+        username: emailDraft.username.trim(),
+        port: Number(emailPortText.trim()) || 0,
+      };
+      const n = await testEmailConnection(cfg);
+      toast.success(t("settings.emailTestOk", { n }));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
+  const emailMeta = (() => {
+    switch (emailStatus?.state) {
+      case "running":
+        return { dot: "bg-emerald-500", text: t("email.status.running") };
+      case "paused":
+        return { dot: "bg-amber-500", text: t("email.status.paused") };
+      case "error":
+        return { dot: "bg-red-500", text: t("email.status.error") };
+      default:
+        return { dot: "bg-zinc-400", text: t("email.status.disabled") };
+    }
+  })();
 
   /** 拉取当前系统 Toast 列表，用于诊断来源过滤 */
   async function handleDump() {
@@ -349,6 +415,110 @@ export function SettingsPage({
               {t("settings.restoreDefaultSource")}
             </button>
           )}
+        </div>
+      </Section>
+
+      <Section title={t("settings.sectionEmail")}>
+        <div className="py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", emailMeta.dot)} />
+              <p className="truncate text-sm">{emailMeta.text}</p>
+            </div>
+            <Switch
+              checked={settings.email.enabled}
+              onCheckedChange={(v) => void save({ email: { ...settings.email, enabled: v } })}
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+            {emailStatus?.message ?? t("settings.emailDesc")}
+          </p>
+        </div>
+
+        <div className="space-y-2 py-3">
+          <div className="flex gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailHost")}</p>
+              <Input
+                value={emailDraft.host}
+                onChange={(e) => setEmailDraft({ ...emailDraft, host: e.target.value })}
+                onBlur={() => blurSaveEmail({ host: emailDraft.host.trim() })}
+                placeholder={t("settings.emailHostPlaceholder")}
+                className="h-8 font-mono text-xs"
+              />
+            </div>
+            <div className="w-20 shrink-0">
+              <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailPort")}</p>
+              <Input
+                value={emailPortText}
+                onChange={(e) => setEmailPortText(e.target.value)}
+                onBlur={blurEmailPort}
+                className="h-8 font-mono text-xs"
+              />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailUser")}</p>
+            <Input
+              value={emailDraft.username}
+              onChange={(e) => setEmailDraft({ ...emailDraft, username: e.target.value })}
+              onBlur={() => blurSaveEmail({ username: emailDraft.username.trim() })}
+              placeholder={t("settings.emailUserPlaceholder")}
+              className="h-8 font-mono text-xs"
+            />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">{t("settings.emailPass")}</p>
+            <Input
+              type="password"
+              value={emailDraft.password}
+              onChange={(e) => setEmailDraft({ ...emailDraft, password: e.target.value })}
+              onBlur={() => blurSaveEmail({ password: emailDraft.password })}
+              placeholder={t("settings.emailPassPlaceholder")}
+              autoComplete="off"
+              className="h-8 font-mono text-xs"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-muted-foreground">{t("settings.emailInterval")}</p>
+              <select
+                value={settings.email.poll_interval_secs}
+                onChange={(e) =>
+                  void save({
+                    email: { ...settings.email, poll_interval_secs: Number(e.target.value) },
+                  })
+                }
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value={30}>{t("settings.intervalSeconds", { n: 30 })}</option>
+                <option value={60}>{t("settings.intervalMinutes", { n: 1 })}</option>
+                <option value={120}>{t("settings.intervalMinutes", { n: 2 })}</option>
+                <option value={300}>{t("settings.intervalMinutes", { n: 5 })}</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-muted-foreground">{t("settings.emailTls")}</p>
+              <Switch
+                checked={settings.email.use_tls}
+                onCheckedChange={(v) => void save({ email: { ...settings.email, use_tls: v } })}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t("settings.emailBaselineHint")}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              disabled={testBusy}
+              onClick={() => void handleTestEmail()}
+            >
+              {testBusy ? t("settings.emailTesting") : t("settings.emailTest")}
+            </Button>
+          </div>
         </div>
       </Section>
 
