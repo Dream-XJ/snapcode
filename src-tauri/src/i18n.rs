@@ -135,6 +135,48 @@ pub fn access_not_granted(lang: &str) -> &'static str {
     pick(lang, "未授予通知访问权限", "Notification access not granted")
 }
 
+/* ---------- 邮箱轮询（POP3） ---------- */
+
+pub fn email_config_incomplete(lang: &str) -> &'static str {
+    pick(
+        lang,
+        "邮箱配置不完整，请在设置中补全服务器、账号与授权码",
+        "Email settings incomplete: fill in server, account and auth code",
+    )
+}
+
+pub fn email_connect_failed(lang: &str, err: &str) -> String {
+    if is_en(lang) {
+        format!("Failed to connect to the mail server: {err}")
+    } else {
+        format!("无法连接邮箱服务器: {err}")
+    }
+}
+
+pub fn email_auth_failed(lang: &str, err: &str) -> String {
+    if is_en(lang) {
+        format!("Mailbox login failed (check the auth code, not the login password): {err}")
+    } else {
+        format!("邮箱登录失败，请确认使用的是授权码而非登录密码: {err}")
+    }
+}
+
+pub fn email_poll_failed(lang: &str, err: &str) -> String {
+    if is_en(lang) {
+        format!("Failed to poll the mailbox: {err}")
+    } else {
+        format!("轮询邮箱失败: {err}")
+    }
+}
+
+pub fn email_not_configured(lang: &str) -> &'static str {
+    pick(
+        lang,
+        "请先在设置中填写邮箱配置",
+        "Configure your mailbox in Settings first",
+    )
+}
+
 /* ---------- 全局快捷键 ---------- */
 
 pub fn shortcut_multi_keys(lang: &str, shortcut: &str) -> String {

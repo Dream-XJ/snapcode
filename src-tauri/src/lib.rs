@@ -1,4 +1,5 @@
 mod commands;
+mod email_monitor;
 mod hotkey;
 mod i18n;
 mod mail;
@@ -19,7 +20,7 @@ use tauri::{App, AppHandle, Manager};
 use tauri_plugin_global_shortcut::ShortcutState;
 
 use settings::Settings;
-use state::{AppState, ListenerState};
+use state::{AppState, EmailState, ListenerState};
 use storage::Db;
 
 fn show_main_window(app: &AppHandle) {
@@ -127,6 +128,8 @@ pub fn run() {
                 paused: AtomicBool::new(false),
                 monitor_alive: AtomicBool::new(false),
                 shortcut_error: Mutex::new(None),
+                email_status: RwLock::new(EmailState::default()),
+                email_alive: AtomicBool::new(false),
             });
             app_handle.manage(state.clone());
 
@@ -140,9 +143,12 @@ pub fn run() {
                 eprintln!("创建应用快捷方式失败: {e}");
             }
 
-            // 清理过期历史记录
+            // 清理过期历史记录与过旧的邮件 UIDL 去重记录（30 天）
             if let Err(e) = state.db.cleanup(settings.retention_days) {
                 eprintln!("清理过期记录失败: {e}");
+            }
+            if let Err(e) = state.db.email_seen_cleanup(30) {
+                eprintln!("清理邮件去重记录失败: {e}");
             }
 
             // 托盘
@@ -154,7 +160,10 @@ pub fn run() {
             }
 
             // 通知监听
-            notifications::spawn_monitor(app_handle.clone(), state);
+            notifications::spawn_monitor(app_handle.clone(), state.clone());
+
+            // 邮箱轮询（线程内按配置自行启停）
+            email_monitor::spawn_email_monitor(app_handle.clone(), state);
 
             Ok(())
         })
@@ -182,6 +191,8 @@ pub fn run() {
             commands::dump_notifications,
             commands::check_update,
             commands::install_update,
+            commands::get_email_status,
+            commands::test_email_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

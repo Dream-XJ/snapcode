@@ -25,8 +25,6 @@ const IO_TIMEOUT: Duration = Duration::from_secs(15);
 pub struct ParsedMail {
     /// From 头的显示名或地址
     pub sender: Option<String>,
-    /// 解码后的主题（编码字已还原）
-    pub subject: String,
     /// 主题 + 正文纯文本（HTML 已去标签），直接交给 parser::extract_code
     pub text: String,
     /// Date 头换算的 unix 毫秒；解析失败为 None，调用方回退当前时间
@@ -254,7 +252,6 @@ pub fn parse_mail(raw: &[u8]) -> Option<ParsedMail> {
     let text = format!("{subject}\n{body}");
     Some(ParsedMail {
         sender,
-        subject,
         text,
         received_at,
     })
@@ -437,7 +434,7 @@ mod tests {
                    \r\n\
                    您的验证码是 482913，5 分钟内有效。\r\n";
         let mail = parse_mail(raw.as_bytes()).unwrap();
-        assert_eq!(mail.subject, "登录验证");
+        assert!(mail.text.starts_with("登录验证"));
         assert!(mail.sender.as_deref().unwrap().contains("阿里云"));
         assert!(mail.text.contains("482913"));
         // 2024-01-01 12:00:00 +0800 = 1704081600 秒
@@ -456,7 +453,7 @@ mod tests {
             "WW91ciB2ZXJpZmljYXRpb24gY29kZSBpcyA2NTQzMjEsIHZhbGlkIGZvciAxMCBtaW51dGVzLg==\r\n",
         );
         let mail = parse_mail(raw.as_bytes()).unwrap();
-        assert_eq!(mail.subject, "验证码通知");
+        assert!(mail.text.starts_with("验证码通知"));
         assert!(mail.text.contains("654321"));
     }
 

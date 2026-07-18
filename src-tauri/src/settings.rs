@@ -42,10 +42,9 @@ impl Default for EmailSettings {
 }
 
 impl EmailSettings {
-    /// 配置是否足以发起连接（启用且关键字段非空）。
+    /// 关键字段是否足以发起连接（不含 enabled——「测试连接」可能发生在启用前）。
     pub fn is_complete(&self) -> bool {
-        self.enabled
-            && !self.host.trim().is_empty()
+        !self.host.trim().is_empty()
             && !self.username.trim().is_empty()
             && !self.password.is_empty()
             && self.port > 0

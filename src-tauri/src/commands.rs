@@ -10,10 +10,11 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::hotkey;
 use crate::i18n;
+use crate::mail;
 use crate::notifications;
 use crate::parser::extract_code;
-use crate::settings::Settings;
-use crate::state::{AppState, ListenerState};
+use crate::settings::{EmailSettings, Settings};
+use crate::state::{AppState, EmailState, ListenerState};
 use crate::storage::{now_millis, CodeRecord};
 use crate::TrayItems;
 
@@ -112,6 +113,11 @@ pub fn update_settings(
         *guard = settings.clone();
     }
     settings.save(&settings_path(&app)?)?;
+
+    // 邮箱账户（host/username）变更后 UIDL 命名空间已不同：清空去重表，下次轮询重建基线
+    if old.email.identity() != settings.email.identity() {
+        let _ = state.db.email_seen_clear();
+    }
 
     // 语言切换：托盘菜单与 tooltip 随新语言刷新
     if settings.language != old.language {
@@ -328,4 +334,41 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/* ---------- 邮箱轮询（POP3） ---------- */
+
+#[tauri::command]
+pub fn get_email_status(state: State<'_, Arc<AppState>>) -> Result<EmailState, String> {
+    Ok(state.email_status.read().unwrap().clone())
+}
+
+/// 测试邮箱连接（设置页「测试连接」）：连接 → 登录 → STAT，返回邮箱中的邮件总数。
+/// config 为表单当前值（可能尚未保存）；阻塞网络调用放到线程池，避免卡住 UI。
+#[tauri::command]
+pub async fn test_email_connection(
+    state: State<'_, Arc<AppState>>,
+    config: EmailSettings,
+) -> Result<i64, String> {
+    let lang = state.lang();
+    if !config.is_complete() {
+        return Err(i18n::email_not_configured(&lang).to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut client =
+            mail::connect(&config).map_err(|e| i18n::email_connect_failed(&lang, &e))?;
+        let result = (|| -> Result<i64, String> {
+            client
+                .login(&config.username, &config.password)
+                .map_err(|e| i18n::email_auth_failed(&lang, &e))?;
+            let (count, _) = client
+                .stat()
+                .map_err(|e| i18n::email_poll_failed(&lang, &e))?;
+            Ok(count as i64)
+        })();
+        client.quit();
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
