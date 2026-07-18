@@ -1,6 +1,7 @@
 mod commands;
 mod hotkey;
 mod i18n;
+mod mail;
 mod notifications;
 mod parser;
 mod paste;

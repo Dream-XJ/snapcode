@@ -25,6 +25,11 @@ tauri-plugin-updater = "2"
 # default-features = false 引入 reqwest（不含默认的 system-proxy），其更新请求因此
 # 永不走系统代理、始终直连。feature 统一后，插件的 reqwest 客户端即支持系统代理。
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
+# POP3 over TLS：rustls 与 updater 引入的版本统一；显式使用 ring provider，
+# 不依赖进程级默认 provider（updater 可能在 POP3 首次连接之后才安装它）。
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+mail-parser = "0.11"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
