@@ -2,7 +2,7 @@
 
 <div align="center">
   <img src="src-tauri/icons/icon.png" alt="SnapCode logo" width="96" />
-  <h1>SnapCode 闪码</h1>
+  <h1>SnapCode</h1>
   <p><strong>Capture SMS 2FA codes from Windows notifications and paste them anywhere with one global hotkey.</strong></p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
@@ -25,6 +25,7 @@ SnapCode is a Windows desktop utility that watches the SMS toasts your phone pus
 - **Configurable sources** — notifications are filtered by AUMID with case-insensitive substring matching. Ships with the Phone Link AUMID (`Microsoft.YourPhone_8wekyb3d8bbwe`) and accepts additional sources, such as vendor phone-companion apps. A one-click restore link brings the default source back if you delete it by mistake.
 - **System tray** — closing the window keeps SnapCode listening in the tray; the tray menu offers Open / Pause (Resume) listening / Quit. Single-instance enforced.
 - **Launch at login** — optional autostart with Windows (on by default).
+- **Auto-update** — checks for new releases at startup (or manually from Settings) and offers one-click, signature-verified in-app updates; you choose whether to install.
 - **First-run onboarding** — walks you through granting notification access on first launch.
 - **Light & dark themes** with a custom frameless title bar.
 - **Built-in debugging** — simulate a notification to exercise the full parse-and-store pipeline, or list live system toasts with their real AUMIDs and add any of them as a source in one click.
@@ -85,7 +86,7 @@ Adding extra source AUMIDs lets SnapCode capture codes pushed by apps other than
 
 - [User Guide (English)](docs/USER_GUIDE.md) — complete setup and usage: notification permission, phone-side prerequisites, custom AUMID sources, FAQ.
 - [中文使用指南 (User Guide, Simplified Chinese)](docs/USER_GUIDE.zh-CN.md) — complete setup and usage: notification permission, phone-side prerequisites, custom AUMID sources, FAQ.
-- [AGENTS.md](AGENTS.md) — developer/agent guide: project structure, conventions, and the frontend↔backend contract (14 commands plus the `code-added`, `listener-status`, and `shortcut-error` events; see `src/lib/tauri.ts`, `src/types.ts`, and `src-tauri/src/commands.rs`).
+- [AGENTS.md](AGENTS.md) — developer/agent guide: project structure, conventions, and the frontend↔backend contract (16 commands plus the `code-added`, `listener-status`, `shortcut-error`, and `update-download-progress` events; see `src/lib/tauri.ts`, `src/types.ts`, and `src-tauri/src/commands.rs`).
 
 ## Privacy
 
@@ -93,7 +94,7 @@ SnapCode is fully local. All codes and history live in a SQLite database on your
 
 ## Tech stack
 
-- **Shell** — Tauri v2 with the single-instance, global-shortcut, autostart, and clipboard-manager plugins
+- **Shell** — Tauri v2 with the single-instance, global-shortcut, autostart, clipboard-manager, and updater plugins
 - **Frontend** — React 18, TypeScript, Vite, Tailwind CSS v3, shadcn/ui-style components (Radix primitives, lucide-react, sonner)
 - **Backend** — Rust: windows-rs (WinRT `UserNotificationListener`, `SendInput`), rusqlite (bundled SQLite), regex
 

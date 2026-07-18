@@ -1,12 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { CodeRecord, ListenerState, Settings, ToastInfo } from "@/types";
+import type { CodeRecord, ListenerState, Settings, ToastInfo, UpdateInfo, UpdateProgress } from "@/types";
+import pkg from "../../package.json";
 
 /**
  * 按前后端契约封装的 typed invoke 与事件订阅。
  * 在纯浏览器环境（vite dev 预览、无 Tauri 运行时）下自动切换为内存 Mock，
  * 真实 Tauri 环境中全部走 invoke / listen。
  */
+
+/** 版本号取自 package.json，由 bump-version.mjs 与 tauri.conf.json 保持同步 */
+export const APP_VERSION: string = pkg.version;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -52,6 +56,12 @@ export const getShortcutError = () => call<string | null>("get_shortcut_error");
 /** 列出当前系统 Toast 通知（诊断来源过滤用） */
 export const dumpNotifications = () => call<ToastInfo[]>("dump_notifications");
 
+/** 检查更新；已是最新返回 null */
+export const checkUpdate = () => call<UpdateInfo | null>("check_update");
+
+/** 下载并安装更新；成功后进程由安装器接管退出，Promise 通常不会 resolve */
+export const installUpdate = () => call<void>("install_update");
+
 /* ---------- 事件 ---------- */
 
 type Unlisten = () => void;
@@ -74,6 +84,9 @@ export const onListenerStatus = (cb: (state: ListenerState) => void): Unlisten =
 
 export const onShortcutError = (cb: (error: string | null) => void): Unlisten =>
   subscribe("shortcut-error", cb);
+
+export const onUpdateProgress = (cb: (progress: UpdateProgress) => void): Unlisten =>
+  subscribe("update-download-progress", cb);
 
 /* ---------- 浏览器 Mock（仅在无 Tauri 运行时时使用） ---------- */
 
@@ -226,6 +239,11 @@ async function mockInvoke(cmd: string, args?: Record<string, unknown>): Promise<
           body: "手机连接已就绪。",
         },
       ];
+    case "check_update":
+      // 预览模式不模拟新版本
+      return null;
+    case "install_update":
+      throw "浏览器预览模式不支持安装更新";
     default:
       throw `未知命令: ${cmd}`;
   }

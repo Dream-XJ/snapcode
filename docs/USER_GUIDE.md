@@ -1,4 +1,4 @@
-# SnapCode 闪码 · User Guide
+# SnapCode · User Guide
 
 [Back to project home (GitHub README)](../README.md)
 
@@ -13,6 +13,7 @@ SnapCode is a small Windows utility that lives in the system tray: it listens fo
 - **History**: codes are saved locally; view, copy, or delete them, with a retention of 1 / 3 / 7 / 30 days or forever
 - **Extensible sources**: listens to Phone Link by default; other phone-companion apps can be added as notification sources
 - **Quietly resident**: closing the window minimizes SnapCode to the system tray where it keeps listening; supports pausing the listener and launching at login
+- **Auto-update**: checks for new versions at startup; signature-verified, one-click in-app updates — you choose whether to install
 - **Light & dark themes**: Light / Dark / Follow system
 
 ## Requirements
@@ -114,6 +115,15 @@ The "Debug" (调试) section at the bottom of the Settings page provides two tro
 - **Simulate notification** (模拟通知): enter a piece of text (e.g. "Your verification code is 482913, valid for 5 minutes.") and run it through the full detect-and-store pipeline to verify parsing;
 - **List system notifications** (列出系统通知): lists the toasts currently in the Windows notification center with their real AUMIDs — when no codes are captured, use it to confirm whether the source is configured correctly, and add one as a source in one click.
 
+### App updates
+
+SnapCode checks for a new release on every launch (a failed check, e.g. while offline, stays silent). When one is found, a dialog shows the new version and its release notes:
+
+- Click "**Update now**" (立即更新) to download the update; the installer then takes over, finishes the update, and relaunches the app automatically;
+- Click "**Not now**" (暂不更新) to dismiss — you will be reminded again on the next launch.
+
+You can also check manually at any time via **Settings → About → App update** (设置 → 关于 → 版本更新). All update packages are signature-verified and come only from this project's GitHub Releases.
+
 ## Privacy
 
 All codes and history are stored **only on this machine** (in a local SQLite database). SnapCode uploads nothing over the network and collects no data. You can delete individual records, clear the entire history in one click, or control how long data is kept via the retention policy at any time.
@@ -152,4 +162,4 @@ All codes and history are stored **only on this machine** (in a local SQLite dat
 
 ---
 
-SnapCode 闪码 is open source under the MIT License; the full license text is in [LICENSE](../LICENSE). Project home and source code: <https://github.com/Dream-XJ/snapcode>
+SnapCode is open source under the MIT License; the full license text is in [LICENSE](../LICENSE). Project home and source code: <https://github.com/Dream-XJ/snapcode>

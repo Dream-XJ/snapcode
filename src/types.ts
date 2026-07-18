@@ -44,3 +44,19 @@ export interface ToastInfo {
 }
 
 export type Tab = "history" | "settings";
+
+/** 可用更新信息（Rust check_update 返回；已是最新时为 null） */
+export interface UpdateInfo {
+  version: string;
+  current_version: string;
+  /** Release 说明（Markdown 文本），可能为空 */
+  body: string | null;
+  /** 发布日期 YYYY-MM-DD，可能为空 */
+  date: string | null;
+}
+
+/** 更新下载进度（update-download-progress 事件） */
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}

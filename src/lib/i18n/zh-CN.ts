@@ -1,7 +1,7 @@
 /** 中文（简体）词典：i18n 键的单一事实来源，新增文案先在这里加键 */
 export const zhCN = {
   /* ---------- 通用 ---------- */
-  "app.name": "SnapCode 闪码",
+  "app.name": "SnapCode",
   "app.loading": "加载中…",
   "app.initFailed": "初始化失败：{err}",
   "app.codeCopied": "验证码 {code} 已复制",
@@ -88,9 +88,28 @@ export const zhCN = {
   "settings.dumpNoAumid": "(无 AUMID)",
   "settings.dumpAdd": "加为来源",
   "settings.sectionAbout": "关于",
-  "settings.aboutDesc": "v0.1.0 · Windows 短信验证码捕获工具",
+  "settings.aboutDesc": "v{v} · Windows 短信验证码捕获工具",
   "settings.dataLabel": "数据存储",
   "settings.dataDesc": "全部数据仅保存在本机，不会上传",
+
+  /* ---------- 应用更新 ---------- */
+  "update.label": "版本更新",
+  "update.labelDesc": "启动时自动检查，也可随时手动检查",
+  "update.check": "检查更新",
+  "update.checking": "检查中…",
+  "update.latest": "当前已是最新版本",
+  "update.checkFailed": "检查更新失败：{err}",
+  "update.title": "发现新版本",
+  "update.versionLine": "v{from} → v{to}",
+  "update.notesTitle": "更新内容",
+  "update.noNotes": "暂无更新说明",
+  "update.install": "立即更新",
+  "update.later": "暂不更新",
+  "update.downloading": "正在下载更新… {p}%",
+  "update.downloadingNoTotal": "正在下载更新…",
+  "update.installing": "下载完成，安装程序即将接管并自动重启应用",
+  "update.failed": "更新失败：{err}",
+  "update.retry": "重试",
 
   /* ---------- 快捷键录制 ---------- */
   "recorder.saving": "保存中…",
@@ -112,7 +131,7 @@ export const zhCN = {
   "onboarding.stepPasteTitle": "快捷粘贴",
   "onboarding.stepPasteDesc1": "按下",
   "onboarding.stepPasteDesc2": "即可粘贴最新验证码",
-  "onboarding.welcomeTitle": "欢迎使用 SnapCode 闪码",
+  "onboarding.welcomeTitle": "欢迎使用 SnapCode",
   "onboarding.welcomeDesc": "自动捕获 Windows 通知里的短信验证码",
   "onboarding.openSettings": "打开通知设置",
   "onboarding.done": "开始使用",

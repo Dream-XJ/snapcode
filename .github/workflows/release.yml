@@ -44,14 +44,19 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # tauri-action 在 tag 推送触发时会以该 tag 创建 Release，并上传 NSIS/MSI 安装包。
+      # tauri-action 在 tag 推送触发时创建 Release 并上传 NSIS/MSI 安装包；
+      # 检测到签名私钥时会同时生成签名更新包与 latest.json（应用内一键更新依赖它）。
       # releaseDraft 置为草稿以便先编辑发布说明；确认无误后在 Releases 页面手动 Publish，
       # 想全自动发布则改为 false。
       - name: Build and create GitHub Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseName: 'SnapCode v__VERSION__'
           releaseDraft: true
           prerelease: false
+          # latest.json 明确选用 MSI（原位升级；NSIS 会装出第二份），false 也是 tauri-action 默认值
+          updaterJsonPreferNsis: false

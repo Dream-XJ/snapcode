@@ -104,6 +104,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -178,6 +179,8 @@ pub fn run() {
             commands::complete_onboarding,
             commands::get_shortcut_error,
             commands::dump_notifications,
+            commands::check_update,
+            commands::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

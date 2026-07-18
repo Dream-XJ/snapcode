@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -23,14 +24,15 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// 对齐开机自启状态。
+/// enabled 时无条件重写注册表项：auto-launch 的 is_enabled 只判断键值存在、不校验路径，
+/// exe 移动或覆盖安装后旧路径不会自愈，每次启动重写才能修正指向。
 pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
 
     let manager = app.autolaunch();
-    let current = manager.is_enabled().map_err(|e| e.to_string())?;
-    if enabled && !current {
+    if enabled {
         manager.enable().map_err(|e| e.to_string())?;
-    } else if !enabled && current {
+    } else if manager.is_enabled().map_err(|e| e.to_string())? {
         manager.disable().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -218,4 +220,75 @@ pub fn dump_notifications(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<notifications::ToastInfo>, String> {
     notifications::dump_current_toasts(&state.lang())
+}
+
+/* ---------- 应用更新 ---------- */
+
+/// 可用更新信息（契约类型，对应 src/types.ts 的 UpdateInfo）
+#[derive(Clone, Debug, Serialize)]
+pub struct UpdateInfo {
+    pub version: String,
+    pub current_version: String,
+    pub body: Option<String>,
+    pub date: Option<String>,
+}
+
+/// 下载进度（update-download-progress 事件 payload）
+#[derive(Clone, Debug, Serialize)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// 检查更新；已是最新返回 Ok(None)，网络或配置错误返回 Err。
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(update.map(|u| UpdateInfo {
+        version: u.version,
+        current_version: u.current_version,
+        body: u.body,
+        date: u
+            .date
+            .map(|d| format!("{:04}-{:02}-{:02}", d.year(), d.month() as u8, d.day())),
+    }))
+}
+
+/// 下载并安装更新。下载完成后安装器以被动模式（仅进度条）接管，
+/// 本进程随即自动退出，由安装器完成更新并重启应用——正常情况下不会返回 Ok。
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no update available".to_string())?;
+
+    let progress_app = app.clone();
+    let mut downloaded: u64 = 0;
+    update
+        .download_and_install(
+            move |chunk_len, total| {
+                downloaded += chunk_len as u64;
+                let _ = progress_app.emit(
+                    "update-download-progress",
+                    UpdateProgress { downloaded, total },
+                );
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }

@@ -6,7 +6,9 @@ import { Onboarding } from "@/components/Onboarding";
 import { SettingsPage } from "@/components/SettingsPage";
 import { TitleBar } from "@/components/TitleBar";
 import { TopBar } from "@/components/TopBar";
+import { UpdateDialog } from "@/components/UpdateDialog";
 import {
+  checkUpdate,
   completeOnboarding,
   getHistory,
   getListenerStatus,
@@ -24,7 +26,7 @@ import {
   watchSystemTheme,
   type Theme,
 } from "@/lib/theme";
-import type { CodeRecord, ListenerState, Settings, Tab } from "@/types";
+import type { CodeRecord, ListenerState, Settings, Tab, UpdateInfo } from "@/types";
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -34,6 +36,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("history");
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [loaded, setLoaded] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
   // 事件回调里读取最新 settings，避免闭包过期
   const settingsRef = useRef<Settings | null>(null);
@@ -69,6 +72,15 @@ export default function App() {
       .then(setShortcutError)
       .catch(() => undefined);
   }, []);
+
+  // 启动后自动检查一次更新；离线等失败静默忽略，手动检查走设置页
+  const onboarded = settings?.onboarded;
+  useEffect(() => {
+    if (!loaded || !onboarded) return;
+    checkUpdate()
+      .then(setUpdateInfo)
+      .catch(() => undefined);
+  }, [loaded, onboarded]);
 
   // 全局事件订阅
   useEffect(() => {
@@ -106,6 +118,13 @@ export default function App() {
     }
   }
 
+  /** 手动检查更新：有新版本则弹窗，无则提示已是最新；出错 reject 给调用方 */
+  async function handleCheckUpdate() {
+    const info = await checkUpdate();
+    if (info) setUpdateInfo(info);
+    else toast.success(translate(currentLang(), "update.latest"));
+  }
+
   const lang = settings ? toLang(settings.language) : detectLang();
 
   if (!loaded || !settings) {
@@ -140,6 +159,7 @@ export default function App() {
                   theme={theme}
                   onThemeChange={handleThemeChange}
                   onClearHistory={() => setRecords([])}
+                  onCheckUpdate={handleCheckUpdate}
                 />
               )}
             </main>
@@ -154,6 +174,7 @@ export default function App() {
           </div>
         )}
         <Toaster position="bottom-center" theme={theme} richColors />
+        {updateInfo && <UpdateDialog info={updateInfo} onClose={() => setUpdateInfo(null)} />}
       </div>
     </I18nProvider>
   );

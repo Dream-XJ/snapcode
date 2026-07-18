@@ -23,11 +23,13 @@ pub fn ensure_app_shortcut() -> Result<(), String> {
     let dir = std::path::PathBuf::from(appdata)
         .join(r"Microsoft\Windows\Start Menu\Programs");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建开始菜单目录失败: {e}"))?;
-    let lnk = dir.join("SnapCode 闪码.lnk");
+    let lnk = dir.join("SnapCode.lnk");
     let exe = std::env::current_exe().map_err(|e| format!("获取当前可执行文件路径失败: {e}"))?;
 
     // 旧快捷方式可能指向旧 exe 路径，先删再建，避免覆盖保存时残留旧属性
     let _ = std::fs::remove_file(&lnk);
+    // 0.1.x 时代的快捷方式名为「SnapCode 闪码.lnk」，随更名一并清理
+    let _ = std::fs::remove_file(dir.join("SnapCode 闪码.lnk"));
 
     unsafe {
         // COM 可能已被宿主线程初始化；重复调用返回 S_FALSE，忽略即可
@@ -37,7 +39,7 @@ pub fn ensure_app_shortcut() -> Result<(), String> {
             .map_err(|e| format!("创建 ShellLink 失败: {e}"))?;
         link.SetPath(&HSTRING::from(exe.as_os_str()))
             .map_err(|e| format!("SetPath 失败: {e}"))?;
-        link.SetDescription(&HSTRING::from("SnapCode 闪码"))
+        link.SetDescription(&HSTRING::from("SnapCode"))
             .map_err(|e| format!("SetDescription 失败: {e}"))?;
 
         let store: IPropertyStore = link

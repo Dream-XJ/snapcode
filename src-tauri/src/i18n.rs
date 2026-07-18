@@ -15,9 +15,9 @@ fn is_en(lang: &str) -> bool {
     lang == "en"
 }
 
-/// 应用名（Toast 标题、托盘 tooltip）
-pub fn app_name(lang: &str) -> &'static str {
-    pick(lang, "SnapCode 闪码", "SnapCode")
+/// 应用名（Toast 标题、托盘 tooltip）；统一英文名，不随语言变化
+pub fn app_name(_lang: &str) -> &'static str {
+    "SnapCode"
 }
 
 /* ---------- 托盘菜单 ---------- */

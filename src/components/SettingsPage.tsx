@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { ShortcutRecorder } from "@/components/ShortcutRecorder";
 import { toLang, useI18n, type Lang, type MessageKey } from "@/lib/i18n";
 import {
+  APP_VERSION,
   clearHistory,
   dumpNotifications,
   openNotificationSettings,
@@ -27,6 +28,8 @@ interface SettingsPageProps {
   theme: Theme;
   onThemeChange: (t: Theme) => void;
   onClearHistory: () => void;
+  /** 手动检查更新（关于区按钮）；发现新版本由 App 弹窗，错误以 reject 抛出 */
+  onCheckUpdate: () => Promise<void>;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -74,6 +77,7 @@ export function SettingsPage({
   theme,
   onThemeChange,
   onClearHistory,
+  onCheckUpdate,
 }: SettingsPageProps) {
   const { t, lang } = useI18n();
   const [newAumid, setNewAumid] = useState("");
@@ -82,6 +86,7 @@ export function SettingsPage({
   const [dumpList, setDumpList] = useState<ToastInfo[] | null>(null);
   const [dumpBusy, setDumpBusy] = useState(false);
   const [dumpError, setDumpError] = useState<string | null>(null);
+  const [checkBusy, setCheckBusy] = useState(false);
 
   /** 拉取当前系统 Toast 列表，用于诊断来源过滤 */
   async function handleDump() {
@@ -95,6 +100,19 @@ export function SettingsPage({
       setDumpError(String(e));
     } finally {
       setDumpBusy(false);
+    }
+  }
+
+  /** 手动检查更新：新版本/已最新由 App 处理，这里只兜底错误提示 */
+  async function handleCheck() {
+    if (checkBusy) return;
+    setCheckBusy(true);
+    try {
+      await onCheckUpdate();
+    } catch (e) {
+      toast.error(t("update.checkFailed", { err: String(e) }));
+    } finally {
+      setCheckBusy(false);
     }
   }
 
@@ -433,7 +451,21 @@ export function SettingsPage({
       </Section>
 
       <Section title={t("settings.sectionAbout")}>
-        <Row label={t("app.name")} desc={t("settings.aboutDesc")} />
+        <Row label={t("app.name")} desc={t("settings.aboutDesc", { v: APP_VERSION })} />
+        <Row
+          label={t("update.label")}
+          desc={t("update.labelDesc")}
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={checkBusy}
+              onClick={() => void handleCheck()}
+            >
+              {checkBusy ? t("update.checking") : t("update.check")}
+            </Button>
+          }
+        />
         <Row label={t("settings.dataLabel")} desc={t("settings.dataDesc")} />
       </Section>
     </div>

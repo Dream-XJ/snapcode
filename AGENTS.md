@@ -1,12 +1,12 @@
-# AGENTS.md — SnapCode 闪码
+# AGENTS.md — SnapCode
 
 面向 AI 编码代理（Kimi Code 等）的项目指南。修改代码前请先读完本文件，尤其是「前后端契约」与「已知决策与坑」两节。
 
 ## 项目概览
 
-SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener` 监听系统通知中由「手机连接」(Phone Link) 推送的短信 Toast，自动提取其中的短信验证码存入本地 SQLite，收到新码即复制到剪贴板；用户随时按下全局快捷键 **Ctrl+Shift+V**（可自定义），把最新一条验证码直接粘贴到当前焦点输入框。
+SnapCode 是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener` 监听系统通知中由「手机连接」(Phone Link) 推送的短信 Toast，自动提取其中的短信验证码存入本地 SQLite，收到新码即复制到剪贴板；用户随时按下全局快捷键 **Ctrl+Shift+V**（可自定义），把最新一条验证码直接粘贴到当前焦点输入框。
 
-一句话架构：**Tauri v2 应用 —— React 18 前端 ↔（14 个 invoke 命令 + 3 个事件）↔ Rust 后端 ↔ WinRT 通知/Toast/SendInput + rusqlite**。
+一句话架构：**Tauri v2 应用 —— React 18 前端 ↔（16 个 invoke 命令 + 4 个事件）↔ Rust 后端 ↔ WinRT 通知/Toast/SendInput + rusqlite**。
 
 - 技术栈：Tauri v2 + React 18 + TypeScript + Vite 5 + Tailwind CSS v3（shadcn 风格）+ Rust（windows-rs 0.58 / rusqlite bundled / regex）。
 - 平台：**仅 Windows**（Windows 10 1809+）。Rust 侧 Windows 专用代码全部 `cfg(windows)`，非 Windows 平台保留编译可用的桩实现。
@@ -20,7 +20,7 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 | 文件 | 职责 |
 | --- | --- |
 | `main.rs` | 二进制入口，仅 `#![windows_subsystem = "windows"]` + 调用 `snapcode_lib::run()` |
-| `lib.rs` | Tauri Builder 组装：插件（single-instance / autostart / global-shortcut / clipboard-manager）、`setup()` 初始化（目录、Settings、Db、AppState、托盘、热键、通知监听）、托盘菜单（打开/暂停/退出）、关闭窗口改为隐藏到托盘、`invoke_handler` 注册全部命令 |
+| `lib.rs` | Tauri Builder 组装：插件（single-instance / autostart / global-shortcut / clipboard-manager / updater）、`setup()` 初始化（目录、Settings、Db、AppState、托盘、热键、通知监听）、托盘菜单（打开/暂停/退出）、关闭窗口改为隐藏到托盘、`invoke_handler` 注册全部命令 |
 | `state.rs` | `AppState`（db / settings / status / paused / monitor_alive / shortcut_error）与 `ListenerState`；`set_status()` 更新状态并广播 `listener-status` 事件 |
 | `settings.rs` | `Settings` 结构体（serde）、`Default` 默认值、JSON 加载/保存（`app_config_dir/settings.json`，损坏时回退默认） |
 | `storage.rs` | rusqlite 封装 `Db` 与 `CodeRecord`：`codes` 表 + `received_at` 索引，insert / list（LIKE 模糊过滤，上限 500 条）/ get / latest / clear / delete / mark_used / cleanup（按保留天数清理） |
@@ -30,7 +30,7 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 | `paste.rs` | 快捷粘贴：取最新验证码 → 轮询 `GetAsyncKeyState` 等修饰键物理松开 → 写剪贴板 → `mark_used` → `SendInput` 模拟 Ctrl+V → Toast 提示 |
 | `toast.rs` | Windows Toast 通知：`APP_AUMID = "com.snapcode.app"`；`ensure_app_shortcut()` 创建带 `AppUserModel.ID` 的开始菜单快捷方式；`show_toast()` 发送 ToastGeneric 通知 |
 | `i18n.rs` | Rust 侧用户可见文案的中英对照（托盘菜单、Toast、状态与错误消息）：`pick()` 按 `Settings.language` 二选一，非 `"en"` 一律按中文 |
-| `commands.rs` | 全部 14 个 `#[tauri::command]`：前后端契约的 Rust 侧实现，另有 `apply_autostart()` / `set_paused_impl()` 两个共享辅助函数 |
+| `commands.rs` | 全部 16 个 `#[tauri::command]`：前后端契约的 Rust 侧实现（含 `check_update` / `install_update` 两个更新命令），另有 `apply_autostart()` / `set_paused_impl()` 两个共享辅助函数 |
 
 ### 前端（`src/`）
 
@@ -41,9 +41,10 @@ SnapCode 闪码是一款 Windows 桌面工具：通过 WinRT `UserNotificationLi
 - `components/Onboarding.tsx`：首次使用清单（三步功能介绍 + Phone Link 短信同步前置说明）；`unsupported` / `access_denied` 为响应式错误分支，权限异常另有状态系统兜底。
 - `components/TopBar.tsx`：状态点 + Tab 切换 + 暂停/恢复。
 - `components/TitleBar.tsx`：自定义标题栏（窗口 `decorations: false`，拖拽区 + 最小化/关闭按钮）。
+- `components/UpdateDialog.tsx`：新版本提示弹窗（版本信息 + 更新日志 + 下载进度，确认后安装更新）。
 - `components/ShortcutRecorder.tsx`：快捷键录制控件。
 - `components/ui/`：shadcn 风格基础组件（`button.tsx` / `input.tsx` / `switch.tsx`）。
-- `lib/tauri.ts`：**前后端契约的前端封装**——typed invoke + 事件订阅；无 Tauri 运行时（纯浏览器 `vite dev`）自动切换为内存 Mock，便于前端预览。
+- `lib/tauri.ts`：**前后端契约的前端封装**——typed invoke + 事件订阅，并导出 `APP_VERSION`（当前版本号）；无 Tauri 运行时（纯浏览器 `vite dev`）自动切换为内存 Mock，便于前端预览。
 - `lib/utils.ts`：`cn()`、`DEFAULT_AUMID`（与 `settings.rs` 默认值一致）、`sourceDisplayName()`、`statusMeta()`。
 - `lib/theme.ts`：亮/暗/跟随系统主题（localStorage 持久化）。
 - `lib/i18n/`：中英 i18n。`zh-CN.ts` 是词典键的单一事实来源（`Messages` 类型），`en.ts` 必须同构（类型强制）；`index.tsx` 提供 `I18nProvider` / `useI18n()` 与纯函数 `translate()`（`time.ts` / `utils.ts` 经它取文案）。语言存于后端 `Settings.language`，不走 localStorage。
@@ -73,7 +74,7 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 ## 发布流程
 
 1. `node scripts/bump-version.mjs x.y.z` 同步版本号后提交；
-2. `git tag vx.y.z` 并推送 tag，触发 `.github/workflows/release.yml`（Windows runner，tauri-action 构建 NSIS/MSI 安装包）；
+2. `git tag vx.y.z` 并推送 tag，触发 `.github/workflows/release.yml`（Windows runner，tauri-action 构建 NSIS/MSI 安装包；仓库 Secret `TAURI_SIGNING_PRIVATE_KEY` 存在时自动签名更新包并上传 `latest.json`，一键更新依赖它）；
 3. Workflow 先校验 tag 与 `tauri.conf.json` 版本一致，再创建**草稿** Release，确认无误后在 GitHub 手动 Publish。
 
 ## 前后端契约（改动必读）
@@ -84,9 +85,9 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 - 类型定义：`src/types.ts` ↔ `src-tauri/src/commands.rs` / `storage.rs`（`CodeRecord`）/ `settings.rs`（`Settings`）/ `state.rs`（`ListenerState`）/ `notifications.rs`（`ToastInfo`）
 - 命令注册表：`src-tauri/src/lib.rs` 的 `invoke_handler`
 
-**14 个命令**：`get_history` / `clear_history` / `delete_record` / `copy_code` / `get_settings` / `update_settings` / `get_listener_status` / `retry_listener` / `open_notification_settings` / `set_paused` / `simulate_notification` / `complete_onboarding` / `get_shortcut_error` / `dump_notifications`
+**16 个命令**：`get_history` / `clear_history` / `delete_record` / `copy_code` / `get_settings` / `update_settings` / `get_listener_status` / `retry_listener` / `open_notification_settings` / `set_paused` / `simulate_notification` / `complete_onboarding` / `get_shortcut_error` / `dump_notifications` / `check_update` / `install_update`
 
-**3 个事件**：`code-added`（新验证码入库后广播 `CodeRecord`）/ `listener-status`（监听状态变化广播 `ListenerState`）/ `shortcut-error`（快捷键注册失败广播 `string | null`）
+**4 个事件**：`code-added`（新验证码入库后广播 `CodeRecord`）/ `listener-status`（监听状态变化广播 `ListenerState`）/ `shortcut-error`（快捷键注册失败广播 `string | null`）/ `update-download-progress`（下载进度，payload `UpdateProgress`）
 
 修改任何一侧（增删命令、改字段、改事件 payload），必须同步：
 
@@ -94,6 +95,7 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 2. `src/types.ts` 类型与 `src/lib/tauri.ts` 封装（含浏览器 Mock 分支）；
 3. **Settings 默认值要三方对齐**：`src-tauri/src/settings.rs` 的 `Default` impl、`src/lib/utils.ts` 的 `DEFAULT_AUMID`、`src/lib/tauri.ts` 的 `mockSettings`。例外：`language` 默认值在 Rust 侧由 `default_language()` 按系统 UI 语言检测（中文 → `zh-CN`，其余 → `en`），Mock 固定 `"zh-CN"`。
 4. **i18n 文案两侧对齐**：前端新增/修改文案先加键到 `src/lib/i18n/zh-CN.ts`，再在 `en.ts` 补同构翻译（`Messages` 类型会强制检查）；Rust 侧用户可见文案（托盘 / Toast / 状态与错误消息）集中在 `src-tauri/src/i18n.rs`，语言经 `AppState::lang()` 读取。
+5. **更新相关配置**：`src-tauri/tauri.conf.json` 的 `plugins.updater`（`pubkey` / `endpoints`）也属于更新功能配置，更换签名公钥或更新服务器地址时随契约一并同步。
 
 注意：TS 侧 `number` = Rust `i64`；`received_at` 为 Unix 毫秒时间戳；`Settings` 带 `#[serde(default)]`，缺字段时回退默认值。
 
@@ -117,3 +119,4 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 7. **目标应用以管理员权限运行时，UIPI 会拦截 `SendInput`**，粘贴静默失败属系统正常限制，不是 bug，不要试图「修复」。
 8. **exe 被占用会导致 `cargo build` 链接失败**（`LNK1104` 之类）：dev 构建产物是 `target/debug/snapcode.exe`（tauri dev 直接运行它），先从托盘退出应用或 `taskkill //IM snapcode.exe //F` 再构建；安装版 exe 名为 `SnapCode.exe`。
 9. 关闭主窗口是**隐藏到托盘**而非退出（`lib.rs` 的 `CloseRequested` 处理）；真正退出走托盘菜单「退出」。应用为单实例（second instance 只唤起主窗口）。
+10. **tauri-plugin-updater 在 Windows 上 install 后由安装器接管并直接退出进程**（`install_update` 正常不会返回），前端不要等待其 resolve。签名私钥在本机 `~/.tauri/snapcode.key`（密码为空），公钥嵌在 `tauri.conf.json` 的 `plugins.updater.pubkey`。`apply_autostart` 无条件重写注册表项的原因：auto-launch 的 `is_enabled` 只判注册表项是否存在、不校验路径，无条件 `enable` 才能自愈失效路径（如 exe 被移动后）。
