@@ -240,17 +240,20 @@ struct UpdateProgress {
     total: Option<u64>,
 }
 
-/// 检查更新；已是最新返回 Ok(None)，网络或配置错误返回 Err。
+/// 检查更新；已是最新返回 Ok(None)，网络或配置错误返回 Err（附端点诊断信息）。
 #[tauri::command]
 pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     use tauri_plugin_updater::UpdaterExt;
 
-    let update = app
-        .updater()
-        .map_err(|e| e.to_string())?
-        .check()
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = app.updater().map_err(|e| e.to_string())?.check().await;
+    let update = match result {
+        Ok(update) => update,
+        Err(e) => {
+            // 插件的错误不含具体状态码（如 ReleaseNotFound），补一次诊断性请求
+            let detail = diagnose_update_endpoint(&app).await;
+            return Err(format!("{e}{detail}"));
+        }
+    };
     Ok(update.map(|u| UpdateInfo {
         version: u.version,
         current_version: u.current_version,
@@ -261,19 +264,53 @@ pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> 
     }))
 }
 
+/// 更新检查失败时的辅助诊断：对同一端点再请求一次，报告 HTTP 状态或底层错误，
+/// 弥补插件错误（如 ReleaseNotFound）不含具体原因（404 / 代理拦截 / 连接失败）的问题。
+/// 注意：本函数总在插件 check() 之后调用，rustls 的 ring provider 已由插件安装。
+async fn diagnose_update_endpoint(app: &AppHandle) -> String {
+    // 端点与插件保持一致：取 tauri.conf.json plugins.updater.endpoints 的第一个
+    let endpoint = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|u| u.get("endpoints"))
+        .and_then(|e| e.as_array())
+        .and_then(|a| a.first())
+        .and_then(|u| u.as_str())
+        .map(str::to_owned);
+    let Some(url) = endpoint else {
+        return String::new();
+    };
+    let client = match reqwest::Client::builder()
+        .user_agent("snapcode-update-diagnose")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => return format!(" [diagnose: build client failed: {e}]"),
+    };
+    match client.get(&url).send().await {
+        Ok(res) => format!(" [diagnose: endpoint returned {}]", res.status()),
+        Err(e) => format!(" [diagnose: request failed: {e}]"),
+    }
+}
+
 /// 下载并安装更新。下载完成后安装器以被动模式（仅进度条）接管，
 /// 本进程随即自动退出，由安装器完成更新并重启应用——正常情况下不会返回 Ok。
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
 
-    let update = app
-        .updater()
-        .map_err(|e| e.to_string())?
-        .check()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no update available".to_string())?;
+    let result = app.updater().map_err(|e| e.to_string())?.check().await;
+    let update = match result {
+        Ok(Some(update)) => update,
+        Ok(None) => return Err("no update available".to_string()),
+        Err(e) => {
+            let detail = diagnose_update_endpoint(&app).await;
+            return Err(format!("{e}{detail}"));
+        }
+    };
 
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;

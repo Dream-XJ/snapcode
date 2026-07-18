@@ -160,6 +160,12 @@ All codes and history are stored **only on this machine** (in a local SQLite dat
 
 - Yes. Closing the window only hides it to the system tray and listening continues; only choosing "Quit" in the tray menu actually terminates the program.
 
+**Update check failed?**
+
+- Update checks need access to GitHub Releases. If direct access is unstable on your network, enable your proxy client's "system proxy" or TUN mode and retry. v0.2.0's update check ignored the system proxy (always connected directly) — upgrade to v0.2.1 or later;
+- For a few minutes right after a release is published, `releases/latest` may still point to the previous release and return 404 — just retry later;
+- The error message includes the concrete cause (HTTP status or network error) to help troubleshooting. You can also grab the latest installer from the [Releases page](https://github.com/Dream-XJ/snapcode/releases) and install it on top manually.
+
 ---
 
 SnapCode is open source under the MIT License; the full license text is in [LICENSE](../LICENSE). Project home and source code: <https://github.com/Dream-XJ/snapcode>

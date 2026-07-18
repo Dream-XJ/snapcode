@@ -1,6 +1,6 @@
 [package]
 name = "snapcode"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [lib]
@@ -21,6 +21,10 @@ serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 regex = "1"
 tauri-plugin-updater = "2"
+# 直接声明 reqwest 仅为启用 system-proxy feature：tauri-plugin-updater 以
+# default-features = false 引入 reqwest（不含默认的 system-proxy），其更新请求因此
+# 永不走系统代理、始终直连。feature 统一后，插件的 reqwest 客户端即支持系统代理。
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
