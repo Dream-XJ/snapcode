@@ -11,7 +11,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::settings::EmailSettings;
+use crate::settings::EmailAccount;
 
 /// 同时满足读写的字节流（TlsStream / TcpStream / 测试流）。
 pub trait ReadWrite: Read + Write {}
@@ -166,8 +166,8 @@ impl<S: Read + Write> Pop3Client<S> {
     }
 }
 
-/// 按配置建立 POP3 连接（TCP + 可选 TLS + greeting），尚未登录。
-pub fn connect(cfg: &EmailSettings) -> Result<Pop3Client<Box<dyn ReadWrite>>, String> {
+/// 按账户配置建立 POP3 连接（TCP + 可选 TLS + greeting），尚未登录。
+pub fn connect(cfg: &EmailAccount) -> Result<Pop3Client<Box<dyn ReadWrite>>, String> {
     use std::net::TcpStream;
 
     let host = cfg.host.trim();

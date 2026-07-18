@@ -12,6 +12,7 @@ mod state;
 mod storage;
 mod toast;
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -21,7 +22,7 @@ use tauri::{App, AppHandle, Manager};
 use tauri_plugin_global_shortcut::ShortcutState;
 
 use settings::Settings;
-use state::{AppState, EmailState, ListenerState};
+use state::{AppState, ListenerState};
 use storage::Db;
 
 fn show_main_window(app: &AppHandle) {
@@ -129,7 +130,7 @@ pub fn run() {
                 paused: AtomicBool::new(false),
                 monitor_alive: AtomicBool::new(false),
                 shortcut_error: Mutex::new(None),
-                email_status: RwLock::new(EmailState::default()),
+                email_status: RwLock::new(HashMap::new()),
                 email_alive: AtomicBool::new(false),
             });
             app_handle.manage(state.clone());
