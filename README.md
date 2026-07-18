@@ -23,6 +23,7 @@ SnapCode is a Windows desktop utility that watches the SMS toasts your phone pus
 - **Global paste hotkey** — `Ctrl+Shift+V` (customizable) pastes the newest code into the currently focused field. The backend waits until your modifier keys are physically released, then replays `Ctrl+V` via `SendInput`. Shortcut conflicts are detected and reported so you can pick another combo.
 - **Local history** — every code is stored in a local SQLite database with search, one-click copy, and per-record deletion; retention is configurable at 1 / 3 / 7 / 30 days or forever (default: 7 days), plus a one-click "clear all".
 - **Configurable sources** — notifications are filtered by AUMID with case-insensitive substring matching. Ships with the Phone Link AUMID (`Microsoft.YourPhone_8wekyb3d8bbwe`) and accepts additional sources, such as vendor phone-companion apps. A one-click restore link brings the default source back if you delete it by mistake.
+- **Email code polling** — a built-in POP3 client (single account, SSL/TLS) polls your mailbox for newly arrived mail and extracts codes from subject and body, feeding the same store → copy → paste pipeline. Messages are deduplicated by UIDL in SQLite; first enable only baselines existing mail instead of importing it.
 - **System tray** — closing the window keeps SnapCode listening in the tray; the tray menu offers Open / Pause (Resume) listening / Quit. Single-instance enforced.
 - **Launch at login** — optional autostart with Windows (on by default).
 - **Auto-update** — checks for new releases at startup (or manually from Settings) and offers one-click, signature-verified in-app updates; you choose whether to install.
@@ -33,6 +34,8 @@ SnapCode is a Windows desktop utility that watches the SMS toasts your phone pus
 ## How it works
 
 Phone Link (手机连接) mirrors your phone's SMS as Windows toast notifications → SnapCode subscribes to those toasts through the WinRT `UserNotificationListener` (automatically degrading to a 1-second poll when event subscription is unavailable) → every toast from a configured source AUMID is run through the regex code parser → recognized codes are stored in SQLite and copied to the clipboard → pressing the global hotkey waits for your modifier keys to be released, then pastes the latest code into the focused input via `SendInput`.
+
+Optionally, a POP3 poller (rustls TLS + mail-parser MIME decoding) watches a configured mailbox on an interval: new messages are deduplicated by UIDL, their subjects and bodies run through the same parser, and codes enter the very same pipeline.
 
 ## Requirements
 
@@ -75,6 +78,7 @@ Everything below lives on the Settings page and is stored locally:
 | Auto-copy | Write each recognized code to the clipboard on arrival | On |
 | Launch at login | Start SnapCode with Windows | On |
 | Source AUMIDs | Notification sources to listen to; multiple entries, case-insensitive substring match | `Microsoft.YourPhone_8wekyb3d8bbwe` |
+| Email codes | POP3 mailbox polling (server/port/account/auth code/interval/TLS) with a test-connection button | Off |
 | Retention | Keep history for 1 / 3 / 7 / 30 days or forever | 7 days |
 | Clear history | Delete all stored records | — |
 | Simulate notification | Run any text through the full parse + store pipeline for debugging | — |
@@ -86,17 +90,17 @@ Adding extra source AUMIDs lets SnapCode capture codes pushed by apps other than
 
 - [User Guide (English)](docs/USER_GUIDE.md) — complete setup and usage: notification permission, phone-side prerequisites, custom AUMID sources, FAQ.
 - [中文使用指南 (User Guide, Simplified Chinese)](docs/USER_GUIDE.zh-CN.md) — complete setup and usage: notification permission, phone-side prerequisites, custom AUMID sources, FAQ.
-- [AGENTS.md](AGENTS.md) — developer/agent guide: project structure, conventions, and the frontend↔backend contract (16 commands plus the `code-added`, `listener-status`, `shortcut-error`, and `update-download-progress` events; see `src/lib/tauri.ts`, `src/types.ts`, and `src-tauri/src/commands.rs`).
+- [AGENTS.md](AGENTS.md) — developer/agent guide: project structure, conventions, and the frontend↔backend contract (18 commands plus the `code-added`, `listener-status`, `shortcut-error`, `email-status`, and `update-download-progress` events; see `src/lib/tauri.ts`, `src/types.ts`, and `src-tauri/src/commands.rs`).
 
 ## Privacy
 
-SnapCode is fully local. All codes and history live in a SQLite database on your machine; nothing is uploaded anywhere and no data is collected. Delete individual records, clear all history, or shorten the retention window at any time to control what is kept.
+SnapCode is fully local. All codes and history live in a SQLite database on your machine; nothing is uploaded anywhere and no data is collected. Delete individual records, clear all history, or shorten the retention window at any time to control what is kept. If email polling is configured, the mailbox auth code is stored only in the local `settings.json` (plaintext) and is sent nowhere except your mail server.
 
 ## Tech stack
 
 - **Shell** — Tauri v2 with the single-instance, global-shortcut, autostart, clipboard-manager, and updater plugins
 - **Frontend** — React 18, TypeScript, Vite, Tailwind CSS v3, shadcn/ui-style components (Radix primitives, lucide-react, sonner)
-- **Backend** — Rust: windows-rs (WinRT `UserNotificationListener`, `SendInput`), rusqlite (bundled SQLite), regex
+- **Backend** — Rust: windows-rs (WinRT `UserNotificationListener`, `SendInput`), rusqlite (bundled SQLite), regex, rustls + mail-parser (POP3 email polling)
 
 ## License
 

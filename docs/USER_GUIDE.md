@@ -12,6 +12,7 @@ SnapCode is a small Windows utility that lives in the system tray: it listens fo
 - **One-keystroke paste**: press `Ctrl+Shift+V` and the latest code is pasted directly into the focused input field
 - **History**: codes are saved locally; view, copy, or delete them, with a retention of 1 / 3 / 7 / 30 days or forever
 - **Extensible sources**: listens to Phone Link by default; other phone-companion apps can be added as notification sources
+- **Email codes**: besides SMS, SnapCode can poll your mailbox via POP3 and recognize codes in newly arrived mail
 - **Quietly resident**: closing the window minimizes SnapCode to the system tray where it keeps listening; supports pausing the listener and launching at login
 - **Auto-update**: checks for new versions at startup; signature-verified, one-click in-app updates — you choose whether to install
 - **Light & dark themes**: Light / Dark / Follow system
@@ -89,6 +90,7 @@ The main window lists captured codes in chronological order; each one can be cop
 | Auto copy | Write recognized codes to the clipboard as soon as they arrive | On |
 | Launch at startup | Start automatically after signing in to Windows | On |
 | Notification sources | App sources (AUMIDs) to listen to; multiple entries allowed, substring matching | `Microsoft.YourPhone_8wekyb3d8bbwe` (Phone Link) |
+| Email codes | Polls new mail via POP3 to detect codes (server/account/auth code/interval/TLS) | Off |
 | Retention | Keep history for 1 / 3 / 7 / 30 days or forever | 7 days |
 | Clear history | Delete all history records in one click | — |
 | Simulate notification | Enter a piece of text to verify the parse-and-store pipeline | — |
@@ -108,6 +110,39 @@ From then on, code-bearing SMS pushed by that app is captured automatically.
 
 > Deleted the default Phone Link source by mistake? A "**Restore default source (Phone Link)**" (恢复默认来源（手机连接）) entry appears at the bottom of the "Notification sources" list — one click adds it back.
 
+### Email codes
+
+Besides SMS, SnapCode can also watch your mailbox for verification codes: it **polls new mail over POP3** on a timer and runs detected codes through exactly the same "store → copy → paste" pipeline as SMS codes.
+
+**Step 1: enable POP3 in your mailbox and get an auth code**
+
+Most providers keep POP3 disabled by default. Enable it in the webmail settings and generate a "client auth code" (not your login password):
+
+- **QQ Mail** (QQ邮箱): Settings → Account → "POP3/IMAP/SMTP…" → enable POP3/SMTP and generate an auth code;
+- **163 Mail** (网易163): Settings → "POP3/SMTP/IMAP" → enable POP3/SMTP and generate an auth code;
+- **Gmail / Outlook**: usually your account password or an app-specific password works directly; servers are `pop.gmail.com` / `outlook.office365.com` (Gmail requires enabling it in the account settings).
+
+**Step 2: fill in the configuration in SnapCode**
+
+Open **Settings → Email codes** (设置 → 邮箱验证码) and fill in:
+
+| Field | Description | Example |
+| --- | --- | --- |
+| Listen to mailbox | Master switch | On |
+| Server / Port | POP3 server address and port | `pop.qq.com` / `995` |
+| Account | Usually your full email address | `you@qq.com` |
+| Auth code | The client auth code from step 1 (not the login password) | — |
+| Poll interval | How often new mail is checked (30 s – 5 min) | 1 min |
+| SSL/TLS | Keep on (port 995); turn off only for plaintext (port 110) | On |
+
+Then click "**Test connection**" (测试连接) to verify — on success it shows how many messages the mailbox holds.
+
+**Things to know:**
+
+- **Existing mail is not imported on first enable**: the first connection only establishes a baseline; only mail arriving afterwards is recognized (changing the server or account resets the baseline);
+- The "Pause" button in the top bar pauses notification listening and email polling together;
+- The auth code is stored **in plaintext in the local** `settings.json`, like every other setting, and is never sent anywhere except your mail server (see "Privacy").
+
 ### Debugging tools
 
 The "Debug" (调试) section at the bottom of the Settings page provides two troubleshooting tools:
@@ -126,7 +161,7 @@ You can also check manually at any time via **Settings → About → App update*
 
 ## Privacy
 
-All codes and history are stored **only on this machine** (in a local SQLite database). SnapCode uploads nothing over the network and collects no data. You can delete individual records, clear the entire history in one click, or control how long data is kept via the retention policy at any time.
+All codes and history are stored **only on this machine** (in a local SQLite database). SnapCode uploads nothing over the network and collects no data. You can delete individual records, clear the entire history in one click, or control how long data is kept via the retention policy at any time. If email listening is configured, the mailbox auth code is likewise stored only in the local `settings.json` (in plaintext) and is never sent anywhere except your mail server.
 
 ## FAQ
 
@@ -136,6 +171,13 @@ All codes and history are stored **only on this machine** (in a local SQLite dat
 - Confirm Windows notification access has been granted to SnapCode (see "Granting notification access" above);
 - Confirm the SMS notification actually appears in the Windows notification center — if it is not there, the problem is on the phone-sync side;
 - First use "**Simulate notification**" (模拟通知) in the Settings Debug section to verify the detect-and-store pipeline works, then use "**List system notifications**" (列出系统通知) to confirm the source AUMID is on the listen list.
+
+**Not receiving email codes?**
+
+- First verify the configuration with "**Test connection**" (测试连接) — failures are reported with their cause (server unreachable / bad auth code). For QQ/163 and similar providers you must use the **auth code**, not the login password;
+- Make sure the mail arrived **after** the feature was enabled — existing mail is not imported on first enable;
+- Make sure POP3 is still enabled in the webmail settings; some providers invalidate auth codes when security settings change — generate a fresh one if in doubt;
+- Don't poll more often than every 30 seconds — aggressive polling may be rejected by the server.
 
 **iPhone not receiving codes, or suddenly stopped receiving them?**
 

@@ -23,6 +23,7 @@ SnapCode 是一款 Windows 桌面工具：监听手机通过「手机连接」(P
 - **全局快捷粘贴**——`Ctrl+Shift+V`（可自定义）把最新验证码粘贴到当前焦点输入框：后端会等待修饰键物理松开后，再通过 `SendInput` 回放 `Ctrl+V`。快捷键被占用时会检测并提示，方便更换组合。
 - **本地历史记录**——所有验证码存入本机 SQLite 数据库，支持搜索、一键复制、逐条删除；保留策略可选 1 / 3 / 7 / 30 天或永久（默认 7 天），另有一键清空。
 - **来源可配置**——按 AUMID 过滤通知，大小写无关的包含匹配。默认内置「手机连接」的 AUMID（`Microsoft.YourPhone_8wekyb3d8bbwe`），可添加多个来源（如厂商自家的手机互联应用）；误删默认来源后，列表底部会出现一键恢复链接。
+- **邮箱验证码轮询**——内置 POP3 客户端（单账户、SSL/TLS）定时轮询邮箱新邮件，从主题与正文中提取验证码，走与短信相同的「入库 → 复制 → 粘贴」管线。邮件按 UIDL 在 SQLite 中去重；首次启用只建立基线，不导入历史邮件。
 - **系统托盘常驻**——关闭窗口后继续在托盘监听；托盘菜单提供 打开主窗口 / 暂停（恢复）监听 / 退出。单实例运行。
 - **开机自启**——可选随 Windows 登录自动启动（默认开启）。
 - **自动更新**——启动时自动检查新版本（也可在设置页手动检查），更新包经签名校验后一键安装，是否更新由你决定。
@@ -33,6 +34,8 @@ SnapCode 是一款 Windows 桌面工具：监听手机通过「手机连接」(P
 ## 工作原理
 
 「手机连接」(Phone Link) 把手机短信镜像为 Windows Toast 通知 → SnapCode 通过 WinRT `UserNotificationListener` 订阅这些通知（事件订阅不可用时自动降级为 1 秒轮询）→ 来自已配置来源 AUMID 的每条 Toast 都会经过正则验证码解析器 → 识别到的验证码写入 SQLite 并复制到剪贴板 → 按下全局快捷键时，先等待修饰键松开，再通过 `SendInput` 把最新验证码粘贴到当前焦点输入框。
+
+可选地，POP3 轮询线程（rustls TLS + mail-parser 解析 MIME）按间隔检查所配置邮箱的新邮件：按 UIDL 去重后，邮件主题与正文经过同一个解析器，验证码进入完全相同的管线。
 
 ## 环境要求
 
@@ -75,6 +78,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 自动复制 | 收到验证码即写入剪贴板 | 开启 |
 | 开机自启 | 登录 Windows 后自动启动 | 开启 |
 | 来源 AUMID | 监听的推送来源，可添加多个，大小写无关的包含匹配 | `Microsoft.YourPhone_8wekyb3d8bbwe` |
+| 邮箱验证码 | POP3 轮询邮箱识别新邮件验证码（服务器/端口/账号/授权码/间隔/TLS），带测试连接按钮 | 关闭 |
 | 保留策略 | 历史记录保留 1 / 3 / 7 / 30 天或永久 | 7 天 |
 | 一键清空 | 清空全部历史记录 | — |
 | 模拟通知 | 输入任意文本，走完整的解析 + 入库调试流程 | — |
@@ -86,17 +90,17 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 - [User Guide (English)](docs/USER_GUIDE.md)——English edition of the complete setup and usage guide.
 - [中文使用指南](docs/USER_GUIDE.zh-CN.md)——完整的安装与使用说明：通知权限授予、手机端前提、自定义 AUMID 来源、常见问题。
-- [AGENTS.md](AGENTS.md)——开发者/代理指南：项目结构、约定与前后端契约（16 个命令 + `code-added`、`listener-status`、`shortcut-error`、`update-download-progress` 事件；见 `src/lib/tauri.ts`、`src/types.ts`、`src-tauri/src/commands.rs`）。
+- [AGENTS.md](AGENTS.md)——开发者/代理指南：项目结构、约定与前后端契约（18 个命令 + `code-added`、`listener-status`、`shortcut-error`、`email-status`、`update-download-progress` 事件；见 `src/lib/tauri.ts`、`src/types.ts`、`src-tauri/src/commands.rs`）。
 
 ## 隐私
 
-SnapCode 完全在本地运行。所有验证码与历史记录仅保存在本机 SQLite 数据库中，不进行任何网络上传，不收集任何数据。随时可通过删除单条记录、清空历史或缩短保留策略来控制数据留存。
+SnapCode 完全在本地运行。所有验证码与历史记录仅保存在本机 SQLite 数据库中，不进行任何网络上传，不收集任何数据。随时可通过删除单条记录、清空历史或缩短保留策略来控制数据留存。如配置了邮箱轮询，邮箱授权码同样仅保存在本机 `settings.json`（明文），除你的邮箱服务器外不会发送到任何地方。
 
 ## 技术栈
 
 - **外壳**——Tauri v2，配合 single-instance、global-shortcut、autostart、clipboard-manager、updater 插件
 - **前端**——React 18、TypeScript、Vite、Tailwind CSS v3、shadcn/ui 风格组件（Radix 原语、lucide-react、sonner）
-- **后端**——Rust：windows-rs（WinRT `UserNotificationListener`、`SendInput`）、rusqlite（内置捆绑 SQLite）、regex
+- **后端**——Rust：windows-rs（WinRT `UserNotificationListener`、`SendInput`）、rusqlite（内置捆绑 SQLite）、regex、rustls + mail-parser（POP3 邮件轮询）
 
 ## 许可证
 
