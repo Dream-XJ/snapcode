@@ -12,10 +12,6 @@
 //!   SetReadTimeout 精确设为 keepalive（到期即醒、正常结束本轮），等待结束后
 //!   恢复 IO_TIMEOUT；socket 断开等 IO 错误原样上报，由调用方走重连。
 
-// 邮箱监控线程的 IMAP 化改造尚未接线，本模块当前只被单测引用；
-// 接线完成后应移除本 allow 让死代码检查重新生效。
-#![allow(dead_code)]
-
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;

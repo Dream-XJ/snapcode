@@ -289,10 +289,7 @@ impl Db {
 
     /* ---------- IMAP 同步状态（按账户） ---------- */
 
-    // get/set 目前仅单测使用；IMAP 轮询（imap_client.rs，后续提交）接入后即被生产代码使用，
-    // 参照 i18n.rs 的既有做法暂豁免死代码检查
     /// 读取指定账户的 IMAP 同步状态（UIDVALIDITY, 已处理的最大 UID）；从未同步返回 None。
-    #[allow(dead_code)]
     pub fn imap_state_get(&self, account: &str) -> Result<Option<(u32, u32)>, String> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
@@ -309,7 +306,6 @@ impl Db {
     }
 
     /// 写入/覆盖指定账户的 IMAP 同步状态。
-    #[allow(dead_code)]
     pub fn imap_state_set(&self, account: &str, uidvalidity: u32, max_uid: u32) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

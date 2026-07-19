@@ -169,12 +169,12 @@ pub fn email_not_configured(lang: &str) -> &'static str {
     )
 }
 
-/// 账户配置了尚未接入的协议（如 IMAP）时给出明确提示
-pub fn email_protocol_unsupported(lang: &str) -> &'static str {
+/// 账户已启用但关键字段（服务器/账号/授权码）未填全
+pub fn email_config_incomplete(lang: &str) -> &'static str {
     pick(
         lang,
-        "该账户使用的协议暂不支持",
-        "This account's protocol is not supported yet",
+        "邮箱配置不完整，请在设置中补全服务器、账号与授权码",
+        "Email settings incomplete: fill in server, account and auth code",
     )
 }
 

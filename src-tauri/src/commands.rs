@@ -10,6 +10,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::hotkey;
 use crate::i18n;
+use crate::imap_client::ImapSession;
 use crate::mail;
 use crate::notifications;
 use crate::parser::extract_code;
@@ -353,7 +354,8 @@ pub fn get_email_status(
     Ok(state.email_status_list())
 }
 
-/// 测试邮箱连接（设置页「测试连接」）：连接 → 登录 → STAT，返回邮箱中的邮件总数。
+/// 测试邮箱连接（设置页「测试连接」）：连接 → 登录 → 查询邮箱，返回邮件总数
+/// （POP3 经 STAT，IMAP 经 SELECT INBOX 的 EXISTS）。
 /// config 为表单当前账户值（可能尚未保存）；阻塞网络调用放到线程池，避免卡住 UI。
 #[tauri::command]
 pub async fn test_email_connection(
@@ -380,8 +382,22 @@ pub async fn test_email_connection(
             client.quit();
             result
         }
-        // IMAP 尚未接入：返回明确错误，避免用户误以为是配置有误
-        EmailProtocol::Imap => Err(i18n::email_protocol_unsupported(&lang).to_string()),
+        EmailProtocol::Imap => {
+            let mut session = ImapSession::connect(
+                &config.host,
+                config.port,
+                config.use_tls,
+                &config.username,
+                &config.password,
+            )
+            .map_err(|e| i18n::email_connect_failed(&lang, &e))?;
+            let result = session
+                .select_inbox()
+                .map(|mbox| mbox.exists as i64)
+                .map_err(|e| i18n::email_poll_failed(&lang, &e));
+            session.logout();
+            result
+        }
     })
     .await
     .map_err(|e| e.to_string())?
