@@ -12,7 +12,7 @@ SnapCode is a small Windows utility that lives in the system tray: it listens fo
 - **One-keystroke paste**: press `Ctrl+Shift+V` and the latest code is pasted directly into the focused input field
 - **History**: codes are saved locally; view, copy, or delete them, with a retention of 1 / 3 / 7 / 30 days or forever
 - **Extensible sources**: listens to Phone Link by default; other phone-companion apps can be added as notification sources
-- **Email codes**: besides SMS, SnapCode can poll your mailbox via POP3 and recognize codes in newly arrived mail
+- **Email codes**: besides SMS, SnapCode can watch multiple email accounts via POP3 polling or IMAP (IDLE real-time push) and recognize codes in newly arrived mail
 - **Quietly resident**: closing the window minimizes SnapCode to the system tray where it keeps listening; supports pausing the listener and launching at login
 - **Auto-update**: checks for new versions at startup; signature-verified, one-click in-app updates — you choose whether to install
 - **Light & dark themes**: Light / Dark / Follow system
@@ -90,7 +90,7 @@ The main window lists captured codes in chronological order; each one can be cop
 | Auto copy | Write recognized codes to the clipboard as soon as they arrive | On |
 | Launch at startup | Start automatically after signing in to Windows | On |
 | Notification sources | App sources (AUMIDs) to listen to; multiple entries allowed, substring matching | `Microsoft.YourPhone_8wekyb3d8bbwe` (Phone Link) |
-| Email codes | Polls new mail via POP3 to detect codes (server/account/auth code/interval/TLS) | Off |
+| Email codes | Multiple accounts, each polling via POP3 or watching via IMAP (IDLE push) to detect codes in new mail | Off |
 | Retention | Keep history for 1 / 3 / 7 / 30 days or forever | 7 days |
 | Clear history | Delete all history records in one click | — |
 | Simulate notification | Enter a piece of text to verify the parse-and-store pipeline | — |
@@ -112,35 +112,44 @@ From then on, code-bearing SMS pushed by that app is captured automatically.
 
 ### Email codes
 
-Besides SMS, SnapCode can also watch your mailbox for verification codes: it **polls new mail over POP3** on a timer and runs detected codes through exactly the same "store → copy → paste" pipeline as SMS codes.
+Besides SMS, SnapCode can also watch your mailboxes for verification codes: you can add **multiple email accounts**, each independently using **POP3 (polling)** or **IMAP (IDLE real-time push)**, and detected codes run through exactly the same "store → copy → paste" pipeline as SMS codes.
 
-**Step 1: enable POP3 in your mailbox and get an auth code**
+**Step 1: enable POP3 / IMAP in your mailbox and get an auth code**
 
-Most providers keep POP3 disabled by default. Enable it in the webmail settings and generate a "client auth code" (not your login password):
+Most providers keep client protocols disabled by default. Enable them in the webmail settings and generate a "client auth code" (not your login password):
 
-- **QQ Mail** (QQ邮箱): Settings → Account → "POP3/IMAP/SMTP…" → enable POP3/SMTP and generate an auth code;
-- **163 Mail** (网易163): Settings → "POP3/SMTP/IMAP" → enable POP3/SMTP and generate an auth code;
-- **Gmail / Outlook**: usually your account password or an app-specific password works directly; servers are `pop.gmail.com` / `outlook.office365.com` (Gmail requires enabling it in the account settings).
+- **QQ Mail** (QQ邮箱): Settings → Account → "POP3/IMAP/SMTP…" → enable POP3/SMTP or IMAP/SMTP (whichever protocol you plan to use) and generate an auth code;
+- **163 Mail** (网易163): Settings → "POP3/SMTP/IMAP" → enable POP3/SMTP or IMAP/SMTP and generate an auth code;
+- **Outlook**: usually your account password works directly (accounts with two-step verification need an app password); the server is `outlook.office365.com`;
+- **Gmail is not supported**: Gmail requires OAuth2 sign-in for IMAP/POP3, which this version cannot do — please don't add Gmail accounts.
 
-**Step 2: fill in the configuration in SnapCode**
+**Step 2: add the account in SnapCode**
 
-Open **Settings → Email codes** (设置 → 邮箱验证码) and fill in:
+Open **Settings → Email codes** (设置 → 邮箱验证码), click "**Add account**" (添加账户), and fill in the editor:
 
 | Field | Description | Example |
 | --- | --- | --- |
-| Listen to mailbox | Master switch | On |
-| Server / Port | POP3 server address and port | `pop.qq.com` / `995` |
+| Label | Optional display name; the account address is shown when empty. History entries carry it, so you can tell which account a code came from | `Work` |
+| Protocol | `POP3 (polling)` or `IMAP (IDLE push)` — see the comparison below | IMAP |
+| Server / Port | Server address and port; switching the protocol flips the port between 995 ↔ 993 automatically | `imap.qq.com` / `993` |
 | Account | Usually your full email address | `you@qq.com` |
 | Auth code | The client auth code from step 1 (not the login password) | — |
-| Poll interval | How often new mail is checked (30 s – 5 min) | 1 min |
-| SSL/TLS | Keep on (port 995); turn off only for plaintext (port 110) | On |
+| Poll interval | How often new mail is checked (30 s / 1 / 2 / 5 min); for IMAP it only applies when the server does not support IDLE | 1 min |
+| SSL/TLS | Keep on; turn off only for plaintext (POP3 port 110 / IMAP port 143) | On |
 
 Then click "**Test connection**" (测试连接) to verify — on success it shows how many messages the mailbox holds.
 
+Saved accounts appear as cards showing a status dot, the display name, a protocol badge (POP3 / IMAP), and an on/off toggle; expand a card to edit or delete it. Adding, changing, or removing accounts **takes effect immediately — no restart needed**. The "Pause" button in the top bar pauses notification listening and all email accounts together.
+
+**POP3 or IMAP?**
+
+- **IMAP (recommended)**: when the server supports IDLE, new mail is **pushed in real time** and codes arrive with almost no delay; servers without IDLE automatically fall back to polling at the configured interval, behaving like POP3; dropped connections are re-established automatically.
+- **POP3 (polling)**: checks for new mail on a fixed interval — the most widely compatible option, with timeliness determined by the poll interval.
+
 **Things to know:**
 
-- **Existing mail is not imported on first enable**: the first connection only establishes a baseline; only mail arriving afterwards is recognized (changing the server or account resets the baseline);
-- The "Pause" button in the top bar pauses notification listening and email polling together;
+- **Existing mail is not imported when an account is first enabled**: that account's first connection only establishes a baseline; only mail arriving afterwards is recognized. Baselines are per-account — deleting an account and adding it back rebuilds its baseline;
+- Each account's state is shown by the status dot on its card: green for **Watching** (监听中), grey for **Paused / Disabled** (已暂停 / 未启用), red for **Error** (轮询出错, with the reason attached);
 - The auth code is stored **in plaintext in the local** `settings.json`, like every other setting, and is never sent anywhere except your mail server (see "Privacy").
 
 ### Debugging tools
@@ -161,7 +170,7 @@ You can also check manually at any time via **Settings → About → App update*
 
 ## Privacy
 
-All codes and history are stored **only on this machine** (in a local SQLite database). SnapCode uploads nothing over the network and collects no data. You can delete individual records, clear the entire history in one click, or control how long data is kept via the retention policy at any time. If email listening is configured, the mailbox auth code is likewise stored only in the local `settings.json` (in plaintext) and is never sent anywhere except your mail server.
+All codes and history are stored **only on this machine** (in a local SQLite database). SnapCode uploads nothing over the network and collects no data. You can delete individual records, clear the entire history in one click, or control how long data is kept via the retention policy at any time. If email listening is configured, each account's auth code is likewise stored only in the local `settings.json` (in plaintext) and is never sent anywhere except its own mail server.
 
 ## FAQ
 
@@ -174,10 +183,12 @@ All codes and history are stored **only on this machine** (in a local SQLite dat
 
 **Not receiving email codes?**
 
-- First verify the configuration with "**Test connection**" (测试连接) — failures are reported with their cause (server unreachable / bad auth code). For QQ/163 and similar providers you must use the **auth code**, not the login password;
-- Make sure the mail arrived **after** the feature was enabled — existing mail is not imported on first enable;
-- Make sure POP3 is still enabled in the webmail settings; some providers invalidate auth codes when security settings change — generate a fresh one if in doubt;
-- Don't poll more often than every 30 seconds — aggressive polling may be rejected by the server.
+- First verify the configuration with "**Test connection**" (测试连接) in that account's editor — failures are reported with their cause (server unreachable / bad auth code). For QQ/163 and similar providers you must use the **auth code**, not the login password;
+- Check the status dot on the account card: red means error (the reason is shown), grey means disabled or globally paused;
+- Make sure the mail arrived **after** that account was enabled — existing mail is never imported on first enable;
+- Make sure POP3 / IMAP is still enabled in the webmail settings; some providers invalidate auth codes when security settings change — generate a fresh one if in doubt;
+- With IMAP, new mail usually arrives instantly; if the server does not support IDLE or you use POP3, timeliness depends on the poll interval — don't poll more often than every 30 seconds, as aggressive polling may be rejected by the server;
+- Gmail requires OAuth2 sign-in for IMAP/POP3 and is not supported in this version — a Gmail account will keep reporting errors.
 
 **iPhone not receiving codes, or suddenly stopped receiving them?**
 

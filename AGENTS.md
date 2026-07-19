@@ -4,11 +4,11 @@
 
 ## 项目概览
 
-SnapCode 是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener` 监听系统通知中由「手机连接」(Phone Link) 推送的短信 Toast，自动提取其中的短信验证码存入本地 SQLite，收到新码即复制到剪贴板；用户随时按下全局快捷键 **Ctrl+Shift+V**（可自定义），把最新一条验证码直接粘贴到当前焦点输入框。此外还内置一个 POP3 轮询客户端（单账户、SSL/TLS），定时检查邮箱新邮件并从中提取验证码，走同一管线。
+SnapCode 是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener` 监听系统通知中由「手机连接」(Phone Link) 推送的短信 Toast，自动提取其中的短信验证码存入本地 SQLite，收到新码即复制到剪贴板；用户随时按下全局快捷键 **Ctrl+Shift+V**（可自定义），把最新一条验证码直接粘贴到当前焦点输入框。此外还内置多账户邮箱监听：每账户可选 POP3 定时轮询或 IMAP（IDLE 实时推送，SSL/TLS），检查新邮件并从中提取验证码，走同一管线。
 
-一句话架构：**Tauri v2 应用 —— React 18 前端 ↔（18 个 invoke 命令 + 5 个事件）↔ Rust 后端 ↔ WinRT 通知/Toast/SendInput + rusqlite + rustls/mail-parser（POP3）**。
+一句话架构：**Tauri v2 应用 —— React 18 前端 ↔（18 个 invoke 命令 + 5 个事件）↔ Rust 后端 ↔ WinRT 通知/Toast/SendInput + rusqlite + rustls/mail-parser（POP3）+ imap（IMAP IDLE）**。
 
-- 技术栈：Tauri v2 + React 18 + TypeScript + Vite 5 + Tailwind CSS v3（shadcn 风格）+ Rust（windows-rs 0.58 / rusqlite bundled / regex / rustls 0.23 / mail-parser）。
+- 技术栈：Tauri v2 + React 18 + TypeScript + Vite 5 + Tailwind CSS v3（shadcn 风格）+ Rust（windows-rs 0.58 / rusqlite bundled / regex / rustls 0.23 / mail-parser / imap）。
 - 平台：**仅 Windows**（Windows 10 1809+）。Rust 侧 Windows 专用代码全部 `cfg(windows)`，非 Windows 平台保留编译可用的桩实现。
 - 许可证：MIT（见 `LICENSE`，由远端合并引入）。
 - 仓库：https://github.com/Dream-XJ/snapcode
@@ -21,13 +21,14 @@ SnapCode 是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener
 | --- | --- |
 | `main.rs` | 二进制入口，仅 `#![windows_subsystem = "windows"]` + 调用 `snapcode_lib::run()` |
 | `lib.rs` | Tauri Builder 组装：插件（single-instance / autostart / global-shortcut / clipboard-manager / updater）、`setup()` 初始化（目录、Settings、Db、AppState、托盘、热键、通知监听）、托盘菜单（打开/暂停/退出）、关闭窗口改为隐藏到托盘、`invoke_handler` 注册全部命令 |
-| `state.rs` | `AppState`（db / settings / status / paused / monitor_alive / shortcut_error / email_status / email_alive）、`ListenerState` 与 `EmailState`；`set_status()` / `set_email_status()` 更新状态并广播 `listener-status` / `email-status` 事件（email 侧状态不变不重复广播） |
-| `settings.rs` | `Settings` 结构体（serde，含嵌套 `EmailSettings`）、`Default` 默认值、JSON 加载/保存（`app_config_dir/settings.json`，损坏时回退默认）；含旧配置兼容单测 |
-| `storage.rs` | rusqlite 封装 `Db` 与 `CodeRecord`：`codes` 表 + `received_at` 索引，insert / list（LIKE 模糊过滤，上限 500 条）/ get / latest / clear / delete / mark_used / cleanup（按保留天数清理）；`email_seen` UIDL 去重表（含 `__baseline__` 哨兵）与 mark/set/clear/cleanup |
+| `state.rs` | `AppState`（db / settings / status / paused / monitor_alive / shortcut_error / email_status / email_alive）、`ListenerState`、`EmailState` 与 `EmailAccountStatus`；`email_status` 为 `HashMap<账户id, EmailState>`（按账户独立），`set_email_status()` / `remove_email_status()` 更新后广播 `email-status`，payload 为 `email_status_list()` 的 `Vec<EmailAccountStatus>`（状态不变不重复广播） |
+| `settings.rs` | `Settings` 结构体（serde，含嵌套 `EmailSettings` = `{ accounts: Vec<EmailAccount> }`；`EmailAccount`：id / name / protocol / enabled / host / port / username / password / use_tls / poll_interval_secs，`EmailProtocol` = pop3 / imap）、`Default` 默认值、JSON 加载/保存（`app_config_dir/settings.json`，损坏时回退默认）；`EmailSettings` 自定义 `Deserialize` 把旧版扁平单账户字段自动迁移为 id="default" 的首账户；含迁移单测 |
+| `storage.rs` | rusqlite 封装 `Db` 与 `CodeRecord`：`codes` 表 + `received_at` 索引，insert / list（LIKE 模糊过滤，上限 500 条）/ get / latest / clear / delete / mark_used / cleanup（按保留天数清理）；`email_seen(account_id, uidl)` 去重表（按账户隔离，每账户一条 `__baseline__` 哨兵）与 mark/set/clear/cleanup；`imap_state(account_id, uidvalidity, max_uid)` 表存各账户 IMAP 同步状态 |
 | `parser.rs` | 验证码提取纯函数 `extract_code()`：规则 1 关键词（验证码/动态密码/verification code 等）后 12 字符内首个 4~8 位数字；规则 2 独立 4~6 位数字兜底（排除金额、年份、账号类语境）；含单元测试 |
 | `notifications.rs` | 通知监听线程：`UserNotificationListener` 授权请求、Toast 来源 AUMID 过滤（大小写无关包含匹配）、解析→入库→广播 `code-added`→自动复制；事件订阅失败自动降级 1s 轮询；`dump_current_toasts()` 诊断用列出系统 Toast |
 | `mail.rs` | 手写 POP3 客户端（`Pop3Client<S: Read+Write>` 泛型流，TLS/明文/mock 测试流均可）、`connect()` 按配置建连（rustls 隐式 TLS，显式 ring provider + 系统根证书）、`parse_mail()` 用 mail-parser 解 MIME（编码主题/base64/QP/多部分），HTML-only 邮件经 `html_to_text()` 兜底；含 mock 服务器协议单测与端到端提取单测 |
-| `email_monitor.rs` | 邮箱轮询线程：每 0.5s 热读配置，按间隔（下限 15s）轮询；首次连接只建基线（现存邮件标已见不导入）、增量按 UIDL 拉取（单轮上限 50 封）、解析→入库→广播→自动复制；暂停与全局暂停联动；账户变更由 `update_settings` 清空去重表；`plan_poll()` 为纯函数并有单测 |
+| `imap_client.rs` | 基于 `imap` crate 的同步 IMAP 客户端封装（自建 TCP/rustls 流交给 `imap::Client::new` 包装）：`connect`（LOGIN 认证）/ `has_idle` / `select_inbox` / `search_newer_than` / `fetch_body` / `idle_wait` / `logout`；`IdleStream` 枚举（明文 / TLS）直接操作真实 socket 并实现 `SetReadTimeout`；含 9 个 mock 协议单测 |
+| `email_monitor.rs` | 邮箱监督线程 + 每账户 worker：`reconcile()` 每 0.5s 对比配置与运行中 worker，账户增删改即时热生效（配置变更重启该账户 worker）；POP3 worker 按间隔（下限 15s）以 UIDL 增量轮询（单轮上限 50 封），IMAP worker 优先 IDLE 实时推送、不支持 IDLE 降级为按间隔 UID SEARCH 轮询；IMAP 以 UIDVALIDITY + max_uid 建基线（首连不导入历史，存 `imap_state`）；断线指数退避（`backoff_secs()`）自动重连；暂停与全局暂停联动；解析→入库（来源 `email:备注名或地址`）→广播→自动复制；`reconcile()` / `backoff_secs()` / `plan_uid_state()` / `plan_poll()` 为纯函数并有单测 |
 | `hotkey.rs` | 快捷键字符串解析（`"Ctrl+Shift+V"` → `Shortcut`）与全局注册；失败写入 `shortcut_error` 并广播 `shortcut-error`；含解析单测 |
 | `paste.rs` | 快捷粘贴：取最新验证码 → 轮询 `GetAsyncKeyState` 等修饰键物理松开 → 写剪贴板 → `mark_used` → `SendInput` 模拟 Ctrl+V → Toast 提示 |
 | `toast.rs` | Windows Toast 通知：`APP_AUMID = "com.snapcode.app"`；`ensure_app_shortcut()` 创建带 `AppUserModel.ID` 的开始菜单快捷方式；`show_toast()` 发送 ToastGeneric 通知 |
@@ -39,7 +40,7 @@ SnapCode 是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener
 - `main.tsx`：入口，首帧前应用主题避免亮暗闪烁。
 - `App.tsx`：根组件。三种视图状态：加载中 → 首次引导（`Onboarding`）→ 主界面（`TopBar` + 历史/设置两个 Tab 页）；统一订阅 `code-added` / `listener-status` / `shortcut-error` 三个事件。
 - `components/HistoryPage.tsx`：历史记录页（搜索、复制、删除）。
-- `components/SettingsPage.tsx`：设置页（自动复制、快捷键、开机自启、保留策略、来源 AUMID 管理、邮箱验证码配置（POP3 + 测试连接，订阅 `email-status`）、主题、清空历史、调试区）。
+- `components/SettingsPage.tsx`：设置页（自动复制、快捷键、开机自启、保留策略、来源 AUMID 管理、邮箱验证码多账户管理（账户卡片列表：添加/编辑/删除、启停开关、POP3/IMAP 协议徽标、每账户状态点与测试连接，订阅 `email-status`）、主题、清空历史、调试区）。
 - `components/Onboarding.tsx`：首次使用清单（三步功能介绍 + Phone Link 短信同步前置说明）；`unsupported` / `access_denied` 为响应式错误分支，权限异常另有状态系统兜底。
 - `components/TopBar.tsx`：状态点 + Tab 切换 + 暂停/恢复。
 - `components/TitleBar.tsx`：自定义标题栏（窗口 `decorations: false`，拖拽区 + 最小化/关闭按钮）。
@@ -51,7 +52,7 @@ SnapCode 是一款 Windows 桌面工具：通过 WinRT `UserNotificationListener
 - `lib/theme.ts`：亮/暗/跟随系统主题（localStorage 持久化）。
 - `lib/i18n/`：中英 i18n。`zh-CN.ts` 是词典键的单一事实来源（`Messages` 类型），`en.ts` 必须同构（类型强制）；`index.tsx` 提供 `I18nProvider` / `useI18n()` 与纯函数 `translate()`（`time.ts` / `utils.ts` 经它取文案）。语言存于后端 `Settings.language`，不走 localStorage。
 - `lib/time.ts`：时间格式化工具（函数带 `lang` 参数）。
-- `types.ts`：与 Rust serde 对应的契约类型（`CodeRecord` / `Settings`（含 `EmailSettings`）/ `ListenerState` / `EmailState` / `ToastInfo`）。
+- `types.ts`：与 Rust serde 对应的契约类型（`CodeRecord` / `Settings`（含 `EmailSettings` / `EmailAccount` / `EmailProtocol`）/ `ListenerState` / `EmailAccountStatus` / `ToastInfo`）。
 
 ### 其他
 
@@ -68,7 +69,7 @@ npm run dev                  # 纯前端预览（vite，浏览器内自动使用
 npm run build                # tsc --noEmit && vite build —— 提交前必过
 npm run tauri dev            # 桌面开发模式（前端热更新 + 真实 Rust 后端）
 npm run tauri build          # 打包发布版本
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust 单测（parser / hotkey / settings / storage / mail / email_monitor）—— 提交前必过
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust 单测（parser / hotkey / settings / storage / mail / imap_client / email_monitor）—— 提交前必过
 node scripts/gen-icon.mjs    # 重新生成应用图标（输出 src-tauri/icons/）
 node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）
 ```
@@ -85,18 +86,25 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 契约的单一事实来源是四组文件，必须保持同步：
 
 - 命令封装与事件订阅：`src/lib/tauri.ts`
-- 类型定义：`src/types.ts` ↔ `src-tauri/src/commands.rs` / `storage.rs`（`CodeRecord`）/ `settings.rs`（`Settings`）/ `state.rs`（`ListenerState`）/ `notifications.rs`（`ToastInfo`）
+- 类型定义：`src/types.ts` ↔ `src-tauri/src/commands.rs` / `storage.rs`（`CodeRecord`）/ `settings.rs`（`Settings` / `EmailSettings` / `EmailAccount` / `EmailProtocol`）/ `state.rs`（`ListenerState` / `EmailAccountStatus`）/ `notifications.rs`（`ToastInfo`）
 - 命令注册表：`src-tauri/src/lib.rs` 的 `invoke_handler`
 
 **18 个命令**：`get_history` / `clear_history` / `delete_record` / `copy_code` / `get_settings` / `update_settings` / `get_listener_status` / `retry_listener` / `open_notification_settings` / `set_paused` / `simulate_notification` / `complete_onboarding` / `get_shortcut_error` / `dump_notifications` / `check_update` / `install_update` / `get_email_status` / `test_email_connection`
 
-**5 个事件**：`code-added`（新验证码入库后广播 `CodeRecord`）/ `listener-status`（监听状态变化广播 `ListenerState`）/ `shortcut-error`（快捷键注册失败广播 `string | null`）/ `email-status`（邮箱轮询状态变化广播 `EmailState`）/ `update-download-progress`（下载进度，payload `UpdateProgress`）
+**5 个事件**：`code-added`（新验证码入库后广播 `CodeRecord`）/ `listener-status`（监听状态变化广播 `ListenerState`）/ `shortcut-error`（快捷键注册失败广播 `string | null`）/ `email-status`（任一邮箱账户状态变化广播 `Vec<EmailAccountStatus>`）/ `update-download-progress`（下载进度，payload `UpdateProgress`）
+
+**邮箱相关契约形状**：
+
+- `Settings.email` 为 `{ accounts: EmailAccount[] }`；`EmailAccount` 字段：`id`（前端生成的唯一 id）/ `name`（备注名，空则显示账号地址）/ `protocol`（`EmailProtocol` = `"pop3" | "imap"`）/ `enabled` / `host` / `port` / `username` / `password`（授权码）/ `use_tls` / `poll_interval_secs`；
+- `EmailAccountStatus` = `{ account_id, state, message }`，`state` ∈ `"disabled" | "running" | "paused" | "error"`；
+- `get_email_status()` 返回 `Vec<EmailAccountStatus>`，`email-status` 事件 payload 同形；`test_email_connection(config: EmailAccount)` 直接把前端编辑中的账户对象发给后端测试；
+- `src/types.ts` 对应类型名：`EmailProtocol` / `EmailAccount` / `EmailSettings` / `EmailAccountStatus`（浏览器 Mock 分支同样按数组形态返回状态）。
 
 修改任何一侧（增删命令、改字段、改事件 payload），必须同步：
 
 1. Rust 侧结构体与 `#[tauri::command]` 实现、`lib.rs` 的 `invoke_handler` 列表；
 2. `src/types.ts` 类型与 `src/lib/tauri.ts` 封装（含浏览器 Mock 分支）；
-3. **Settings 默认值要三方对齐**：`src-tauri/src/settings.rs` 的 `Default` impl、`src/lib/utils.ts` 的 `DEFAULT_AUMID`、`src/lib/tauri.ts` 的 `mockSettings`（含 `email` 嵌套对象，与 `EmailSettings::default()` 对齐）。例外：`language` 默认值在 Rust 侧由 `default_language()` 按系统 UI 语言检测（中文 → `zh-CN`，其余 → `en`），Mock 固定 `"zh-CN"`。
+3. **Settings 默认值要三方对齐**：`src-tauri/src/settings.rs` 的 `Default` impl、`src/lib/utils.ts` 的 `DEFAULT_AUMID`、`src/lib/tauri.ts` 的 `mockSettings`（`email` 默认为 `{ accounts: [] }`，与 `EmailSettings::default()` 对齐）。例外：`language` 默认值在 Rust 侧由 `default_language()` 按系统 UI 语言检测（中文 → `zh-CN`，其余 → `en`），Mock 固定 `"zh-CN"`。另：旧版扁平 `email` 单账户字段经 `EmailSettings` 的自定义 `Deserialize` 自动迁移为 `id="default"` 的首个账户，用户无感。
 4. **i18n 文案两侧对齐**：前端新增/修改文案先加键到 `src/lib/i18n/zh-CN.ts`，再在 `en.ts` 补同构翻译（`Messages` 类型会强制检查）；Rust 侧用户可见文案（托盘 / Toast / 状态与错误消息）集中在 `src-tauri/src/i18n.rs`，语言经 `AppState::lang()` 读取。
 5. **更新相关配置**：`src-tauri/tauri.conf.json` 的 `plugins.updater`（`pubkey` / `endpoints`）也属于更新功能配置，更换签名公钥或更新服务器地址时随契约一并同步。
 
@@ -123,7 +131,12 @@ node scripts/bump-version.mjs <x.y.z>   # 同步四处版本号（package.json /
 8. **exe 被占用会导致 `cargo build` 链接失败**（`LNK1104` 之类）：dev 构建产物是 `target/debug/snapcode.exe`（tauri dev 直接运行它），先从托盘退出应用或 `taskkill //IM snapcode.exe //F` 再构建；安装版 exe 名为 `SnapCode.exe`。
 9. 关闭主窗口是**隐藏到托盘**而非退出（`lib.rs` 的 `CloseRequested` 处理）；真正退出走托盘菜单「退出」。应用为单实例（second instance 只唤起主窗口）。
 10. **tauri-plugin-updater 在 Windows 上 install 后由安装器接管并直接退出进程**（`install_update` 正常不会返回），前端不要等待其 resolve。签名私钥在本机 `~/.tauri/snapcode.key`（密码为空），公钥嵌在 `tauri.conf.json` 的 `plugins.updater.pubkey`。`apply_autostart` 无条件重写注册表项的原因：auto-launch 的 `is_enabled` 只判注册表项是否存在、不校验路径，无条件 `enable` 才能自愈失效路径（如 exe 被移动后）。插件以 `default-features = false` 引入 reqwest，**不含 `system-proxy`（reqwest 默认 feature），更新请求因此不走系统代理、始终直连**；本项目在 Cargo.toml 直接声明 reqwest 并启用 `system-proxy`（feature 统一后为插件客户端补上系统代理支持），改动插件 reqwest 相关 feature 时注意不要把它丢掉。`check_update` / `install_update` 失败时会对端点补一次诊断请求（`diagnose_update_endpoint`），把真实 HTTP 状态或网络错误附在错误信息里。
-11. **邮箱轮询首次连接只建基线不导入历史**：`email_seen` 表中的 `__baseline__` 哨兵行表示基线已建立；没有它时 `plan_poll()` 把现存全部 UIDL 标记为已见并跳过导入，防止启用瞬间灌入大量旧验证码。邮箱账户（host+username，`EmailSettings::identity()`）变更时 `update_settings` 清空该表重建基线（不同邮箱 UIDL 命名空间不同）。单轮拉取上限 50 封（`MAX_PER_POLL`），积压逐轮消化；RETR 失败的邮件不标记已见，下轮重试。
+11. **邮箱基线按账户独立，首次连接只建基线不导入历史**：`email_seen(account_id, uidl)` 表按账户隔离，每账户一条 `__baseline__` 哨兵行表示该账户基线已建立；哨兵缺失时 POP3 侧 `plan_poll()` 把现存全部 UIDL 标记为已见并跳过导入，IMAP 侧 `plan_uid_state()` 以当前 UIDVALIDITY + 现存最大 UID 建基线（持久化在 `imap_state` 表），防止启用瞬间灌入大量旧验证码。POP3 单轮拉取上限 50 封（`MAX_PER_POLL`），积压逐轮消化；RETR 失败的邮件不标记已见，下轮重试。
 12. **mail-parser 会把 text/html 件同时列入 `text_body` 与 `html_body`**，`body_text(0)` 对 HTML 做自动纯文本转换且块边界不插空格（会把 `</h1><p>` 两侧的数字粘成假验证码）。`parse_mail()` 的判别：首个 text 件若也在 `html_body` 中，走本模块的 `html_to_text()`（块级标签转空格、行内标签删除）。另：`regex` crate **不支持反向引用**（`\1`），script/style 清除用交替写法。
 13. **rustls 显式使用 ring provider**（`builder_with_provider`），不依赖进程级默认 provider——updater 插件安装默认 provider 的时机不可控，POP3 可能更早连接。根证书用 `rustls-native-certs`（Windows 走 schannel 系统证书库）；rustls 以 `default-features = false` + `ring/std/tls12` 引入，避免拉入 aws-lc-rs。POP3 读写超时 15s，防止服务器挂机拖死轮询线程。
 14. **邮箱授权码明文存于 settings.json**（与其他设置一致），属有意权衡并已在用户手册隐私节说明；若要升级为 DPAPI 等加密存储，需同步改 `Settings` 的序列化与前端表单回填逻辑。
+15. **`imap` crate 以 `default-features = false` 引入，TLS 复用 `mail.rs` 的 rustls 栈**：`imap_client.rs` 自建 TCP / rustls 连接后交给 `imap::Client::new()` 包装会话，不启用 crate 自带的 TLS feature，保证与 POP3 侧同一份 ring provider + 系统根证书配置。已知噪音：`imap-proto 0.10.2` 有 future-incompat 提示（宏尾分号 lint），当前工具链不影响编译与运行，升级 imap 依赖前先确认该提示是否消除。
+16. **Windows 的 `SO_RCVTIMEO` 是句柄级状态**：在 `try_clone()` 出的句柄上设置超时不影响原句柄的阻塞读，因此 IDLE 等待无法靠克隆句柄做超时控制。`imap_client.rs` 的 `IdleStream` 枚举直接持有真实 socket（TLS 变体取 rustls `StreamOwned.sock`）并实现 `SetReadTimeout`，`imap::Client::set_read_timeout()` 的超时因此真正生效——不要再引入 `try_clone` 式的超时写法。
+17. **IMAP `UID SEARCH UID n:*` 中的 `*` 使区间必含末封邮件**：只要邮箱非空，结果总会带上 UID 最大的那封，即使它小于 `n`。`search_newer_than(max_uid)` 必须在客户端再过滤掉 `uid <= max_uid` 的命中，否则最后一封邮件会被每轮误判为新邮件重复处理。
+18. **`IDLE_KEEPALIVE = 60s` 是有意的取舍**：RFC 2177 只要求 29 分钟内刷新 IDLE，但 `idle_wait()` 阻塞期间 worker 无法检查停止/暂停/配置变更标志，keepalive 超时返回才会重新循环检查——60s 换来操控最多 1 分钟内响应。改大之前先想清楚 worker 关停延迟会变长。
+19. **Gmail 的 IMAP 强制 OAuth2（XOAUTH2），本版本不支持**：`imap_client.rs` 只实现 LOGIN 认证（授权码/密码），QQ / 163 / Outlook 等用授权码走 LOGIN 没有问题；用户手册已声明不支持 Gmail，不要为其加「特殊处理」分支。
